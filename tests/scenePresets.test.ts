@@ -45,7 +45,7 @@ for (const preset of ['studio', 'shopfront', 'interior'] as const) {
     assert.equal(scenery.group.children.filter(child => child.name === 'mounting-wall').length, 1);
     assert.equal(scenery.wall.position.z, -0.13);
     scenery.group.traverse(child => assert.equal(child.userData.part, undefined));
-    assert.equal(scenery.roomLight.intensity > 0, preset === 'interior');
+    assert.equal(scenery.roomLight.intensity, preset === 'interior' ? 2.2 : 0);
     assert.equal(scenery.frameBounds.isEmpty(), preset === 'studio');
     if (preset !== 'studio') {
       const dimensions = sceneryDimensions(3600, 1200);
@@ -79,4 +79,15 @@ test('disposing interior scenery releases every owned resource exactly once and 
   assert.equal(scenery.group.parent, null);
   assert.equal(scenery.group.children.length, 0);
   assert.ok(disposalCounts.every(count => count === 1));
+});
+
+
+test('disposing scenery releases light shadow render targets', () => {
+  const scenery = buildScenery('interior', 3.6, 1.2, -0.13);
+  const target = new T.WebGLRenderTarget(1, 1);
+  let disposed = 0;
+  target.addEventListener('dispose', () => disposed++);
+  scenery.roomLight.shadow.map = target;
+  disposeScenery(scenery);
+  assert.equal(disposed, 1);
 });

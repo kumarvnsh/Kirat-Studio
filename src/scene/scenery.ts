@@ -11,6 +11,7 @@ export type Scenery = {
 function disposeGroup(group: T.Group) {
   group.removeFromParent();
   group.traverse(child => {
+    if (child instanceof T.Light) child.dispose();
     if (!(child instanceof T.Mesh)) return;
     child.geometry.dispose();
     const materials = Array.isArray(child.material) ? child.material : [child.material];
@@ -26,19 +27,31 @@ export function disposeScenery(scenery: Scenery) {
 export function buildScenery(preset: ScenePreset, width: number, height: number, wallZ: number): Scenery {
   const group = new T.Group();
   group.name = 'installation-scenery';
+  const addMesh = <G extends T.BufferGeometry>(geometry: G, parameters: T.MeshStandardMaterialParameters) => {
+    let material: T.MeshStandardMaterial | undefined;
+    try {
+      material = new T.MeshStandardMaterial(parameters);
+      const mesh = new T.Mesh(geometry, material);
+      group.add(mesh);
+      return mesh;
+    } catch (error) {
+      geometry.dispose();
+      material?.dispose();
+      throw error;
+    }
+  };
   try {
     const d = sceneryDimensions(width * 1000, height * 1000);
     const contextual = preset !== 'studio';
     const wallWidth = contextual ? d.facadeWidth : Math.max(width * 2, 10);
     const wallHeight = contextual ? d.wallTop - d.floorY : Math.max(height * 3, 5);
-    const wall = new T.Mesh(
+    const wall = addMesh(
       new T.PlaneGeometry(wallWidth, wallHeight),
-      new T.MeshStandardMaterial({ color: '#bcc7ca', roughness: 0.95 }),
+      { color: '#bcc7ca', roughness: 0.95 },
     );
     wall.name = 'mounting-wall';
     wall.position.set(0, contextual ? (d.wallTop + d.floorY) / 2 : 0, wallZ);
     wall.receiveShadow = true;
-    group.add(wall);
 
     const roomLight = new T.DirectionalLight('#fff0d8', preset === 'interior' ? 2.2 : 0);
     roomLight.position.set(-width * 0.25, height / 2 + 1, 3);
@@ -48,26 +61,24 @@ export function buildScenery(preset: ScenePreset, width: number, height: number,
       : new T.Box3();
 
     const box = (name: string, w: number, h: number, depth: number, x: number, y: number, z: number, color: string, metalness = 0) => {
-      const mesh = new T.Mesh(
+      const mesh = addMesh(
         new T.BoxGeometry(w, h, depth),
-        new T.MeshStandardMaterial({ color, roughness: 0.65, metalness }),
+        { color, roughness: 0.65, metalness },
       );
       mesh.name = name;
       mesh.position.set(x, y, z);
       mesh.receiveShadow = true;
-      group.add(mesh);
     };
 
     if (contextual) {
-      const floor = new T.Mesh(
+      const floor = addMesh(
         new T.PlaneGeometry(wallWidth * 2, 8),
-        new T.MeshStandardMaterial({ color: preset === 'interior' ? '#b9a78c' : '#a9aaa4', roughness: 1 }),
+        { color: preset === 'interior' ? '#b9a78c' : '#a9aaa4', roughness: 1 },
       );
       floor.name = 'floor';
       floor.rotation.x = -Math.PI / 2;
       floor.position.set(0, d.floorY, wallZ + 4);
       floor.receiveShadow = true;
-      group.add(floor);
     }
     if (preset === 'shopfront') {
       const glazingWidth = wallWidth * 0.88;
