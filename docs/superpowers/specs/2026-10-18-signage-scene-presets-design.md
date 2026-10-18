@@ -1,7 +1,7 @@
 # Signage scene presets — design specification
 
 Date: 18 October 2026
-Status: design approved in chat; written specification awaiting user review.
+Status: design and written specification approved by the user on 18 October 2026.
 
 ## Objective
 
