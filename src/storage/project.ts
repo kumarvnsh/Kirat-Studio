@@ -1,0 +1,155 @@
+// Project file format. v3 stores design and fabrication separately; view state is never saved.
+// v1/v2 (prototype) files store one flat `state` object and are migrated on open.
+import {
+  checkSettings,
+  constructionNames,
+  defaultSettings,
+  numericSettings,
+  type Artwork,
+  type DesignSettings,
+  type DesignState,
+  type FabricationState,
+} from '../domain/project.ts';
+import { autoGroup } from '../artwork/grouping.js';
+
+export const FORMAT = 'kirat-signage-studio';
+export const VERSION = 3;
+
+export type TraceSettings = { background: string; threshold: number; minpixels: number };
+export type ProjectFile = {
+  design: DesignState;
+  fabrication: FabricationState;
+  traceSettings?: TraceSettings;
+};
+
+export function serialise(p: ProjectFile): string {
+  return JSON.stringify({ format: FORMAT, version: VERSION, ...p, savedAt: new Date().toISOString() });
+}
+
+export function parseProject(text: string): ProjectFile {
+  const raw = JSON.parse(text);
+  if (raw?.format !== FORMAT) throw Error('Not a Kirat Studio project.');
+  let design: DesignState;
+  if (raw.version === 3) design = raw.design;
+  else if (raw.version === 1 || raw.version === 2) design = fromFlatState(raw.state, raw.version);
+  else throw Error('Unsupported project version ' + raw.version + '.');
+  validateDesign(design);
+  return { design, fabrication: {}, traceSettings: raw.traceSettings };
+}
+
+// Prototype files: one flat object mixing design and view fields.
+function fromFlatState(s: any, version: 1 | 2): DesignState {
+  if (!s || !Array.isArray(s.components)) throw Error('Missing artwork data.');
+  const d = defaultSettings();
+  const settings = Object.fromEntries(
+    Object.keys(d).map((k) => [k, s[k] ?? (d as any)[k]]),
+  ) as DesignSettings;
+  let elements = s.components,
+    groups = s.groups;
+  if (version === 1) {
+    // v1 had no groups: group by layout, keep each element's saved construction.
+    const g = autoGroup(elements);
+    groups = g.groups;
+    elements = g.components.map((c: any, i: number) => ({
+      ...c,
+      type: s.components[i].type,
+      override: s.components[i].type !== g.groups.find((x: any) => x.id === c.group)!.type,
+    }));
+  }
+  return {
+    settings,
+    artwork: {
+      elements,
+      groups,
+      bounds: s.artBounds,
+      imageWidth: s.imageWidth,
+      imageHeight: s.imageHeight,
+      imageData: s.artData,
+      approved: !!s.approved,
+    },
+  };
+}
+
+const finite = (n: unknown, lo: number, hi: number) =>
+  typeof n === 'number' && Number.isFinite(n) && n >= lo && n <= hi;
+const isType = (t: unknown) => typeof t === 'string' && Object.hasOwn(constructionNames, t);
+const isId = (id: unknown) => typeof id === 'string' && /^[\w-]{1,60}$/.test(id);
+
+export function validateDesign(d: DesignState) {
+  if (!d?.settings) throw Error('Missing design settings.');
+  for (const k of Object.keys(numericSettings))
+    if (typeof (d.settings as any)[k] !== 'number') throw Error('Invalid ' + k + '.');
+  const bad = checkSettings(d.settings);
+  if (bad) throw Error(bad);
+  if (!/^#[0-9a-f]{6}$/i.test(d.settings.boardcolor) || !/^#[0-9a-f]{6}$/i.test(d.settings.facecolor))
+    throw Error('Invalid colour.');
+  if (d.artwork) validateArtwork(d.artwork);
+}
+
+function validateArtwork(a: Artwork) {
+  const b = a.bounds;
+  if (
+    !Array.isArray(b) ||
+    b.length !== 4 ||
+    b.some((v) => !finite(v, 0, 2000)) ||
+    b[2] <= b[0] ||
+    b[3] <= b[1]
+  )
+    throw Error('Invalid artwork bounds.');
+  if (!finite(a.imageWidth, 1, 2000) || !finite(a.imageHeight, 1, 2000))
+    throw Error('Invalid artwork dimensions.');
+  if (
+    typeof a.imageData !== 'string' ||
+    !a.imageData.startsWith('data:image/png;base64,') ||
+    a.imageData.length > 12e6
+  )
+    throw Error('Invalid face artwork.');
+  if (!Array.isArray(a.groups) || a.groups.length > 100) throw Error('Invalid artwork groups.');
+  for (const g of a.groups)
+    if (!isId(g.id) || typeof g.name !== 'string' || g.name.length > 60 || !isType(g.type))
+      throw Error('Invalid artwork group.');
+  if (!Array.isArray(a.elements) || a.elements.length > 100)
+    throw Error('Project exceeds the 100-shape limit.');
+  let points = 0;
+  for (const e of a.elements) {
+    if (!isId(e.id) || !isType(e.type) || !/^#[0-9a-f]{6}$/i.test(e.color) || typeof e.name !== 'string')
+      throw Error('Invalid element data.');
+    if (!a.groups.some((g) => g.id === e.group) || typeof e.override !== 'boolean')
+      throw Error('Invalid element group.');
+    if (!Array.isArray(e.bounds) || e.bounds.length !== 4 || e.bounds.some((n) => !finite(n, 0, 2000)))
+      throw Error('Invalid element bounds.');
+    if (!Array.isArray(e.regions) || e.regions.length > 100) throw Error('Invalid contours.');
+    for (const r of e.regions) {
+      if (!Array.isArray(r.outer) || !Array.isArray(r.holes)) throw Error('Invalid contours.');
+      for (const loop of [r.outer, ...r.holes]) {
+        points += loop.length;
+        if (
+          loop.length < 3 ||
+          loop.length > 10000 ||
+          loop.some((v) => !Array.isArray(v) || v.length !== 2 || v.some((n) => !finite(n, -10000, 10000)))
+        )
+          throw Error('Invalid contour points.');
+      }
+    }
+  }
+  if (points > 50000) throw Error('Project exceeds the contour complexity limit.');
+}
+
+// Browser autosave. The previous session's autosave is kept as a backup.
+export const AUTOSAVE = 'kirat-studio-autosave';
+export const BACKUP = 'kirat-studio-backup';
+export function readStore(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+export function writeStore(key: string, text: string): boolean {
+  try {
+    localStorage.setItem(key, text);
+    return true;
+  } catch {
+    return false;
+  }
+}

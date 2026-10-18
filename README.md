@@ -19,21 +19,30 @@ Requires Node 20+.
 
 | Path | Contents |
 |---|---|
-| `src/app/` | Page wiring, editor controls, project state, styles (`app.js`, `style.css`) |
-| `src/artwork/` | Raster masking, contour tracing (`contours.js`); dot attachment and grouping (`grouping.js`) |
-| `src/scene/` | Three.js scene, sign geometry, lighting (`scene.js`) |
-| `src/editor/` | View-only state (`view-state.js`), undo/redo snapshots (`history.js`) |
-| `public/` | Static assets served at `/` (Kirat sample logo) |
-| `tests/` | `node --test` regression checks |
+| `src/domain/project.ts` | Data model: `DesignState` / `ViewState` / `FabricationState`, settings table (ranges, defaults), `sceneInput()` |
+| `src/app/` | React UI (`App`, `ToolsPanel`, `Viewport`, `Inspector`), store (`store.ts`), cross-panel actions (`actions.ts`), styles |
+| `src/artwork/` | Contour tracing (`contours.js`), dot attachment and grouping (`grouping.js`), raster import pipeline (`import.ts`) |
+| `src/editor/history.ts` | Immutable undo/redo over designs |
+| `src/storage/project.ts` | Project file format v3, v1/v2 migration, validation, browser autosave |
+| `src/scene/scene.js` | Three.js scene, sign geometry, lighting (still plain JS) |
+| `public/` | Static assets served at `/` (Kirat sample logo, not yet added) |
+| `tests/` | `node --test` checks (`.js` and `.ts`; Node 22 strips types natively) |
 | `reference/prototype/` | Byte-exact copy of the original ChatGPT-hosted prototype (v02). Do not edit. |
 
-Further folders from the roadmap (`domain/`, `geometry/`, `assembly/`, `fabrication/`, `catalog/`, `digital/`, `storage/`) get created when their first module lands.
+Further folders from the roadmap (`geometry/`, `assembly/`, `fabrication/`, `catalog/`, `digital/`) get created when their first module lands.
+
+## State rules
+
+- **Design** (`design.present`): settings and artwork. Every edit goes through `editDesign()` and is one undo step. Saved and autosaved.
+- **View**: mode, selection, isolation, stage, explode, day/night, lights, presentation. Changed with `setView()`. Never saved into the design, never undone.
+- **Fabrication**: reserved slot in the file format (Milestone E).
+- The renderer only reads `sceneInput(design, view)`; it never writes back.
 
 ## Status
 
-Milestone A done. Milestone B in progress: artwork groups with one construction per group (plus per-element overrides), detached dots attached to their letter, undo/redo (Ctrl/Cmd+Z, Shift+Z), browser autosave with a previous-session backup, project format v2 (v1 files still open). The prototype code is ported as-is: same behaviour, now built with Vite and using npm `three@0.180.0` and `clipper-lib@6.4.2` instead of vendored copies. It is still plain JS; new modules can be TypeScript (`allowJs` is on). Still to do for B: groups not yet named Symbol/Wordmark/Tagline for the Kirat sample (needs the logo in `public/`), and the React UI plus the design/view/fabrication state split.
+Milestones A and B are done, except for the Kirat sample logo: artwork groups with per-element overrides, i-dots attached to their letters, undo/redo (including retrace), autosave plus previous-session backup, project format v3 (v1/v2 files migrate on open), React UI. Still open: name the Kirat groups Symbol / Main wordmark / Tagline once `public/kirat-reference.png` is added. `scene.js` is still plain JS; port it to TypeScript as it gets reworked in Milestone C.
 
-Units: the UI and saved project use millimetres; `scene.js` converts to metres at the rendering boundary.
+Units: settings and saved projects use millimetres; `scene.js` converts to metres at the rendering boundary.
 
 ## Reference prototype
 

@@ -3,12 +3,26 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
     "strict": true,
     "allowJs": true,
     "checkJs": false,
     "noEmit": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "jsx": "react-jsx",
+    "allowImportingTsExtensions": true,
+    "types": [
+      "vite/client",
+      "node"
+    ]
   },
-  "include": ["src", "tests"]
+  "include": [
+    "src",
+    "tests",
+    "vite.config.ts"
+  ]
 }

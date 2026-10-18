@@ -1,0 +1,179 @@
+// Operations that span panels: importing artwork, opening/saving projects, mode changes, export.
+import { loadImage, sampleCrop, traceImage } from '../artwork/import.ts';
+import { constructionNames, type ConstructionType, type ViewMode } from '../domain/project.ts';
+import { AUTOSAVE, BACKUP, parseProject, readStore, serialise, writeStore } from '../storage/project.ts';
+import { applyGroupType } from '../artwork/grouping.js';
+import { editDesign, getState, loadDesign, say, setTrace, setView, subscribe } from './store.ts';
+import type { SignScene } from '../scene/scene.js';
+
+// The renderer, set by <Viewport>. Null when WebGL is unavailable.
+export const viewer: { current: SignScene | null } = { current: null };
+let source: HTMLImageElement | null = null; // image the current artwork was traced from
+
+const fullCrop = { x: 0, y: 0, w: 100, h: 100 };
+const reportError = (e: unknown) => say(e instanceof Error ? e.message : String(e));
+
+export async function importImage(url: string, sample = false) {
+  try {
+    source = await loadImage(url);
+    setTrace({ crop: sample ? sampleCrop : fullCrop, background: 'white', threshold: 45 });
+    retrace();
+  } catch (e) {
+    reportError(e);
+  }
+}
+
+// Retracing replaces the artwork as one undoable design edit.
+export function retrace() {
+  if (!source) return say('Upload artwork or load the Kirat sample first.');
+  try {
+    const { artwork, truncated } = traceImage(source, getState().trace);
+    const holes = artwork.elements.reduce((n, e) => n + e.regions.reduce((m, r) => m + r.holes.length, 0), 0);
+    editDesign(
+      (d) => ({ ...d, artwork }),
+      `${artwork.elements.length} shapes · ${holes} holes · ${artwork.groups.length} groups${truncated ? ' · smallest shapes capped at 100' : ''}. ` +
+        'Elements are grouped by row and spacing; groups much smaller than the main lettering default to vinyl. Review groups in the inspector.',
+    );
+    setView({
+      selected: artwork.elements[0].id,
+      isolate: false,
+      selectionActive: false,
+      mode: getState().view.mode === 'bend' ? '3d' : getState().view.mode,
+    });
+  } catch (e) {
+    reportError(e);
+  }
+}
+
+export async function openProject(text: string, note = 'Project opened.') {
+  const p = parseProject(text);
+  if (p.design.artwork) source = await loadImage(p.design.artwork.imageData);
+  setTrace({ ...(p.traceSettings ?? {}), crop: fullCrop });
+  loadDesign(p.design, note);
+}
+
+export function projectText() {
+  const s = getState(),
+    t = s.trace;
+  return serialise({
+    design: s.design.present,
+    fabrication: s.fabrication,
+    traceSettings: { background: t.background, threshold: t.threshold, minpixels: t.minpixels },
+  });
+}
+
+export function download(url: string, name: string) {
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  a.click();
+}
+
+export function saveProject() {
+  const url = URL.createObjectURL(new Blob([projectText()], { type: 'application/json' }));
+  download(url, 'kirat-signage-project.json');
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  say('Project downloaded with traced geometry, settings and face artwork.');
+}
+
+export function setMode(mode: ViewMode) {
+  const { design, view } = getState();
+  if (mode === 'bend') {
+    const el = design.present.artwork?.elements.find((e) => e.id === view.selected);
+    if (!el || el.type === 'omit') return say('Select a visible artwork shape for the forming study.');
+  }
+  setView({ mode, isolate: mode === 'bend' ? view.isolate : false });
+  if (mode === 'bend')
+    say(
+      'Geometric strip study for selected contours. Notches, springback, bend allowance and machine instructions are not simulated.',
+    );
+  else if (mode === '2d')
+    say(
+      'Click a traced shape to review its construction. Use Exclude to remove background marks or unwanted details.',
+    );
+}
+
+export type ApplyScope = 'group' | 'selected' | 'all';
+export function applyConstruction(type: ConstructionType, scope: ApplyScope) {
+  const { design, view } = getState();
+  const a = design.present.artwork,
+    sel = a?.elements.find((e) => e.id === view.selected);
+  if (!a || !sel) return;
+  const groups = a.groups.map((g) => ({ ...g })),
+    elements = a.elements.map((e) => ({ ...e }));
+  if (scope === 'selected') {
+    const e = elements.find((e) => e.id === sel.id)!;
+    e.type = type;
+    e.override = type !== groups.find((g) => g.id === e.group)?.type;
+  } else
+    for (const g of scope === 'all' ? groups : groups.filter((g) => g.id === sel.group)) {
+      elements.forEach((e) => e.group === g.id && (e.override = false));
+      applyGroupType(groups, elements, g.id, type);
+    }
+  const groupName = a.groups.find((g) => g.id === sel.group)?.name;
+  editDesign(
+    (d) => ({ ...d, artwork: { ...a, groups, elements } }),
+    scope === 'selected'
+      ? `${sel.name} set to ${constructionNames[type]} as an override.`
+      : `${scope === 'all' ? 'All groups' : groupName} set to ${constructionNames[type]}.`,
+  );
+}
+
+export function exportView(trace: HTMLCanvasElement | null) {
+  const { view, design } = getState();
+  const url = view.mode === '2d' ? trace?.toDataURL() : viewer.current?.export();
+  if (!url) return say('3D export is unavailable on this device.');
+  const image = new Image();
+  image.onload = () => {
+    const c = document.createElement('canvas');
+    c.width = image.width;
+    c.height = image.height + 70;
+    const ctx = c.getContext('2d')!;
+    ctx.fillStyle = '#f3f3ea';
+    ctx.fillRect(0, 0, c.width, c.height);
+    ctx.drawImage(image, 0, 0);
+    ctx.fillStyle = '#284047';
+    ctx.font = Math.max(12, c.width / 80) + 'px Arial';
+    ctx.fillText('KIRAT SIGNAGE STUDIO · CONCEPT PREVIEW · NOT FOR FABRICATION', 20, c.height - 40);
+    ctx.font = Math.max(10, c.width / 95) + 'px Arial';
+    const s = design.present.settings;
+    ctx.fillText(
+      `${s.width} × ${s.height} mm board · nominal geometry · lighting illustrative`,
+      20,
+      c.height - 18,
+    );
+    download(c.toDataURL(), 'kirat-signage-preview.png');
+  };
+  image.src = url;
+}
+
+// Startup: previous autosave becomes the backup, then is restored; otherwise load the sample.
+export function startSession() {
+  const previous = readStore(AUTOSAVE);
+  if (previous) writeStore(BACKUP, previous);
+  let last = getState().design.present,
+    timer: ReturnType<typeof setTimeout>,
+    warned = false;
+  subscribe(() => {
+    const d = getState().design.present;
+    if (d === last) return;
+    last = d;
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      if (d.artwork && !writeStore(AUTOSAVE, projectText()) && !warned) {
+        warned = true;
+        say('Autosave failed (browser storage full or blocked). Use Save project to keep a copy.');
+      }
+    }, 400);
+  });
+  const sample = () => importImage('kirat-reference.png', true);
+  if (previous) openProject(previous, 'Last session restored from autosave.').catch(sample);
+  else sample();
+}
+
+export const hasBackup = () => !!readStore(BACKUP);
+export function restoreBackup() {
+  const text = readStore(BACKUP);
+  if (text && confirm('Replace the current design with the previous session backup?'))
+    openProject(text, 'Previous session restored. Undo history starts here.').catch(reportError);
+}
