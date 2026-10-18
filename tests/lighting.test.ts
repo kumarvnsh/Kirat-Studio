@@ -35,3 +35,15 @@ test('after exposure, a lit face blooms at night but not in daylight', () => {
   assert.ok(exposed('night') > BLOOM_THRESHOLD);
   assert.ok(exposed('day') < BLOOM_THRESHOLD);
 });
+
+test('per-group light: board default, white override, RGB colour, artwork match, off', async () => {
+  const { resolveLight } = await import('../src/domain/lighting.ts');
+  const e = { id: 'a', name: 'a', type: 'front', group: 'g', override: false, pixels: 1, bounds: [0, 0, 1, 1], color: '#3092c8', regions: [] } as any;
+  const g = (light?: any) => ({ id: 'g', name: 'G', type: 'front', light }) as any;
+  assert.equal(resolveLight(g(), e, 6500).color, kelvinToHex(6500));
+  assert.equal(resolveLight(g({ temp: 3000 }), e, 6500).color, kelvinToHex(3000));
+  assert.equal(resolveLight(g({ mode: 'rgb', color: '#ff0000' }), e, 6500).color, '#ff0000');
+  assert.equal(resolveLight(g({ mode: 'artwork' }), e, 6500).color, '#3092c8');
+  const off = resolveLight(g({ on: false, dimming: 0.3 }), e, 6500);
+  assert.deepEqual([off.on, off.dimming], [false, 0.3]);
+});

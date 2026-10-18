@@ -49,16 +49,32 @@ export const say = (message: string) => set({ ...state, message });
 export const setTrace = (patch: Partial<TraceOptions>) =>
   set({ ...state, trace: { ...state.trace, ...patch } });
 
+let lastCoalesce: { key: string; at: number } | null = null;
+
 // Design edits go through history. View changes never touch the design.
-export function editDesign(fn: (d: DesignState) => DesignState, message?: string) {
+// When `coalesceKey` is provided (e.g. while dragging a slider or scrubbing a number),
+// rapid edits with the same key within 650 ms replace the present state without pushing duplicates to `past`.
+export function editDesign(fn: (d: DesignState) => DesignState, message?: string, coalesceKey?: string) {
+  const next = fn(state.design.present);
+  if (next === state.design.present) return;
+  const now = Date.now();
+  const coalesce =
+    !!coalesceKey &&
+    lastCoalesce?.key === coalesceKey &&
+    now - lastCoalesce.at < 650 &&
+    state.design.past.length > 0;
+  lastCoalesce = coalesceKey ? { key: coalesceKey, at: now } : null;
   set({
     ...state,
-    design: record(state.design, fn(state.design.present)),
+    design: coalesce
+      ? { past: state.design.past, present: next, future: [] }
+      : record(state.design, next),
     message: message ?? state.message,
   });
 }
 // Load a whole design (open file, restore autosave): fresh history, fresh view.
 export function loadDesign(design: DesignState, message: string, fabrication = state.fabrication) {
+  lastCoalesce = null;
   const first = design.artwork?.elements[0]?.id ?? null;
   set({
     ...state,
@@ -72,8 +88,14 @@ export function loadDesign(design: DesignState, message: string, fabrication = s
 export function setFabrication(fn: (f: FabricationState) => FabricationState) {
   set({ ...state, fabrication: fn(state.fabrication) });
 }
-export const undo = () => set({ ...state, design: undoH(state.design) });
-export const redo = () => set({ ...state, design: redoH(state.design) });
+export const undo = () => {
+  lastCoalesce = null;
+  set({ ...state, design: undoH(state.design) });
+};
+export const redo = () => {
+  lastCoalesce = null;
+  set({ ...state, design: redoH(state.design) });
+};
 
 export function setView(patch: Partial<ViewState> | ((v: ViewState) => Partial<ViewState>)) {
   const p = typeof patch === 'function' ? patch(state.view) : patch;
@@ -119,6 +141,12 @@ export function isolate(id: string | null) {
 // Selection. `selected` is the primary element; `selection` all selected elements.
 export const select = (id: string) =>
   setView({ selected: id, selection: [id], selectedGroup: null, selectionActive: true });
+export function clearSelection() {
+  setView({ selected: null, selection: [], selectedGroup: null, selectionActive: false });
+}
+export function selectBoard() {
+  setView({ selected: null, selection: [], selectedGroup: '__board', selectionActive: false });
+}
 export function selectMany(ids: string[], primary = ids[ids.length - 1] ?? null) {
   setView({ selected: primary, selection: ids, selectedGroup: null, selectionActive: ids.length > 0 });
 }

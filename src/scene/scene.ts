@@ -142,7 +142,7 @@ function bandGeometry(path: Point[], gauge: number, depth: number, progress: num
 
 export class SignScene {
   host: HTMLElement;
-  onSelect: (id: string, add: boolean) => void;
+  onSelect: (id: string | null, add: boolean, doubleClick?: boolean) => void;
   renderer: T.WebGLRenderer;
   scene = new T.Scene();
   camera = new T.PerspectiveCamera(35, 1, 0.01, 100);
@@ -161,8 +161,10 @@ export class SignScene {
   forming: T.Group | null = null;
   worldParts: { id: string; regions: Region[] }[] = [];
   wall: T.Mesh | null = null;
+  lightUpdaters: ((s: SceneInput) => void)[] = [];
+  lastSize: [number, number] = [0, 0];
 
-  constructor(host: HTMLElement, onSelect: (id: string, add: boolean) => void) {
+  constructor(host: HTMLElement, onSelect: (id: string | null, add: boolean, doubleClick?: boolean) => void) {
     this.host = host;
     this.onSelect = onSelect;
     // Antialiasing comes from the composer's multisampling; tone mapping from the effect chain.
@@ -174,7 +176,7 @@ export class SignScene {
     host.append(this.renderer.domElement);
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
-    this.controls.minDistance = 0.3;
+    this.controls.minDistance = 0.2;
     this.controls.maxDistance = 30;
     this.controls.addEventListener('change', () => this.draw());
     this.scene.add(this.hemi);
@@ -209,22 +211,49 @@ export class SignScene {
     );
     this.scene.add(this.group);
     const ray = new T.Raycaster();
-    let down: [number, number] | null = null;
-    this.renderer.domElement.addEventListener('pointerdown', (e) => (down = [e.clientX, e.clientY]));
-    this.renderer.domElement.addEventListener('pointerup', (e) => {
-      if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 5) return;
+    const pickPart = (clientX: number, clientY: number) => {
       const r = this.renderer.domElement.getBoundingClientRect();
+      if (!r.width || !r.height) return undefined;
       ray.setFromCamera(
-        new T.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, (-(e.clientY - r.top) / r.height) * 2 + 1),
+        new T.Vector2(((clientX - r.left) / r.width) * 2 - 1, (-(clientY - r.top) / r.height) * 2 + 1),
         this.camera,
       );
-      const hit = ray
+      return ray
         .intersectObjects(this.group.children, true)
         .find((h) => h.object.userData.part && h.object.visible && h.object.parent?.visible);
-      if (hit) this.onSelect(hit.object.userData.part, e.shiftKey || e.metaKey || e.ctrlKey);
+    };
+    let down: [number, number] | null = null;
+    this.renderer.domElement.addEventListener('pointerdown', (e) => {
+      down = [e.clientX, e.clientY];
+      this.renderer.domElement.style.cursor = 'grabbing';
+    });
+    this.renderer.domElement.addEventListener('pointermove', (e) => {
+      if (e.buttons !== 0) {
+        this.renderer.domElement.style.cursor = 'grabbing';
+        return;
+      }
+      const hit = pickPart(e.clientX, e.clientY);
+      this.renderer.domElement.style.cursor = hit ? 'pointer' : 'grab';
+    });
+    this.renderer.domElement.addEventListener('pointerup', (e) => {
+      this.renderer.domElement.style.cursor = 'grab';
+      if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 5) return;
+      const hit = pickPart(e.clientX, e.clientY);
+      const add = e.shiftKey || e.metaKey || e.ctrlKey;
+      if (hit) this.onSelect(hit.object.userData.part, add);
+      else if (!add) this.onSelect(null, false);
+    });
+    this.renderer.domElement.addEventListener('dblclick', (e) => {
+      const hit = pickPart(e.clientX, e.clientY);
+      if (hit) {
+        this.onSelect(hit.object.userData.part, false, true);
+        this.focusSelection();
+      } else {
+        this.fit('perspective');
+      }
     });
     new ResizeObserver(() => this.resize()).observe(host);
-    this.resize();
+    this.resize(true);
     const loop = () => {
       requestAnimationFrame(loop);
       this.controls.update();
@@ -232,10 +261,12 @@ export class SignScene {
     loop();
   }
 
-  resize() {
+  resize(force = false) {
     const w = this.host.clientWidth,
       h = this.host.clientHeight;
     if (!w || !h) return;
+    if (!force && this.lastSize[0] === w && this.lastSize[1] === h) return;
+    this.lastSize = [w, h];
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(w, h, false);
@@ -250,6 +281,7 @@ export class SignScene {
   clear() {
     this.outline = null;
     this.forming = null;
+    this.lightUpdaters = [];
     this.group.traverse((o: any) => {
       o.geometry?.dispose();
       o.userData.extraTexture?.dispose();
@@ -404,9 +436,9 @@ export class SignScene {
 
     // Soft spill from lit letters onto the fascia: one light per fifth of the board width.
     // Same intensity day or night; by day the sun simply swamps it.
-    if (lit && s.mode !== 'bend') {
+    if (s.mode !== 'bend') {
       const bins = new Map<number, ElementLayout>();
-      for (const e of L.elements.filter((e) => recipes[e.type].lit)) {
+      for (const e of L.elements.filter((e) => e.light?.on)) {
         const x = (e.bounds[0] + e.bounds[2]) / 2,
           bin = Math.round(((x * M + W / 2) / W) * 5);
         if (!bins.has(bin)) bins.set(bin, e);
@@ -414,8 +446,8 @@ export class SignScene {
       for (const e of bins.values()) {
         const top = Math.max(...e.parts.map((p) => p.z1)) * M,
           light = new T.PointLight(
-            kelvinToHex(st.ledTemp),
-            0.3 * emission(true, s.dimming),
+            e.light!.color,
+            lit ? 0.3 * emission(true, s.dimming * e.light!.dimming) : 0,
             Math.max(0.7, H * 1.3),
             2,
           );
@@ -425,6 +457,10 @@ export class SignScene {
           top + 0.16,
         );
         this.layers.get('leds')!.add(light);
+        this.lightUpdaters.push((cur) => {
+          light.intensity =
+            cur.lights !== false ? 0.3 * emission(true, cur.dimming * e.light!.dimming) : 0;
+        });
       }
     }
     this.buildPower(s);
@@ -472,18 +508,29 @@ export class SignScene {
       }
       return mesh(g, mat, p.layer, z0, e.id);
     };
-    const ledColour = kelvinToHex(st.ledTemp),
-      glow = emission(lit, s.dimming);
+    // Each group is its own circuit: master power x group on/off, master dimming x group dimming.
+    // In "artwork" mode RGB LEDs reproduce the letter's own colours, so the artwork drives the emission.
+    const light = e.light,
+      matchArt = light?.mode === 'artwork',
+      ledColour = matchArt ? '#ffffff' : (light?.color ?? kelvinToHex(st.ledTemp)),
+      glowOf = (cur: SceneInput) =>
+        emission(cur.lights !== false && (light?.on ?? true), cur.dimming * (light?.dimming ?? 1)),
+      glow = glowOf(s),
+      emitArt = matchArt ? !!(st.keepart && this.texture) : !!art,
+      emitBase = matchArt ? (emitArt ? '#ffffff' : light!.color) : base;
     // Bare stainless unless a colour is chosen, then painted metal.
     const metalFace = () => (e.faceColor ? this.finish('painted', e.faceColor) : this.finish('stainless'));
     const faceMat = () => {
       const m = this.finish('acrylic', base) as T.MeshPhysicalMaterial;
       if (art) m.map = this.texture;
-      if (frontLit(e.type) && lit) {
+      if (frontLit(e.type)) {
         // Light through the face = LED colour × face colour (artwork texture or uniform colour).
-        m.emissive.set(ledColour).multiply(new T.Color(base));
+        m.emissive.set(ledColour).multiply(new T.Color(emitBase));
         m.emissiveIntensity = glow;
-        if (art) m.emissiveMap = this.texture;
+        if (emitArt) m.emissiveMap = this.texture;
+        this.lightUpdaters.push((cur) => {
+          m.emissiveIntensity = glowOf(cur);
+        });
       }
       return m;
     };
@@ -511,15 +558,16 @@ export class SignScene {
         ? new T.MeshStandardMaterial({ color: '#dfe8ea', roughness: 0.1, transparent: true, opacity: 0.45 })
         : this.material('#75878c', 0.05, 0.8);
       extrude(mat, false);
-      if (haloLit(e.type) && lit)
-        this.haloGlow(regions, L.letterBase * M + 0.0001, e.id, mesh, ledColour, glow);
+      if (haloLit(e.type))
+        this.haloGlow(regions, L.letterBase * M + 0.0001, e.id, mesh, light?.color ?? ledColour, glow, glowOf);
     } else if (p.kind === 'leds') {
       const body = this.material('#e7eee4', 0, 0.4),
         lens = this.material('#fff5cc', 0, 0.2);
-      if (lit) {
-        lens.emissive.set(ledColour);
-        lens.emissiveIntensity = glow * 1.5;
-      }
+      lens.emissive.set(light?.color ?? ledColour);
+      lens.emissiveIntensity = glow * 1.5;
+      this.lightUpdaters.push((cur) => {
+        lens.emissiveIntensity = glowOf(cur) * 1.5;
+      });
       for (const [x, y] of e.leds) {
         mesh(
           new T.BoxGeometry(LED_SIZE.w * M, LED_SIZE.h * M, LED_SIZE.d * M),
@@ -535,11 +583,12 @@ export class SignScene {
     } else if (p.kind === 'returns') {
       // Full acrylic letters glow through their sides; metal returns stay dark.
       if (e.type === 'fullacrylic') {
-        const m = this.finish('acrylic', st.facecolor) as T.MeshPhysicalMaterial;
-        if (lit) {
-          m.emissive.set(ledColour).multiply(new T.Color(st.facecolor));
-          m.emissiveIntensity = glow * 0.6; // sides pass less light than the face
-        }
+        const m = this.finish('acrylic', base) as T.MeshPhysicalMaterial;
+        m.emissive.set(ledColour).multiply(new T.Color(matchArt ? light!.color : base));
+        m.emissiveIntensity = glow * 0.6; // sides pass less light than the face
+        this.lightUpdaters.push((cur) => {
+          m.emissiveIntensity = glowOf(cur) * 0.6;
+        });
         ring(e.params.gauge * M, m);
       } else
         ring(
@@ -592,6 +641,7 @@ export class SignScene {
     mesh: (...a: any[]) => T.Mesh,
     colour: string,
     intensity: number,
+    glowOf?: (cur: SceneInput) => number,
   ) {
     for (const r of regions) {
       const xs = r.outer.map((v) => v[0]),
@@ -622,26 +672,36 @@ export class SignScene {
       ctx.fill('evenodd');
       const tex = new T.CanvasTexture(c);
       tex.colorSpace = T.SRGBColorSpace;
-      const m = mesh(
-        new T.PlaneGeometry(width, height),
-        new T.MeshBasicMaterial({
-          map: tex,
-          color: new T.Color(colour).multiplyScalar(intensity * 0.6),
-          transparent: true,
-          opacity: 0.85,
-          depthWrite: false,
-        }),
-        'mounting',
-        z,
-        id,
-      );
+      const mat = new T.MeshBasicMaterial({
+        map: tex,
+        color: new T.Color(colour).multiplyScalar(intensity * 0.6),
+        transparent: true,
+        opacity: intensity > 0 ? 0.85 : 0,
+        depthWrite: false,
+      });
+      if (glowOf) {
+        this.lightUpdaters.push((cur) => {
+          const g = glowOf(cur);
+          mat.color.set(colour).multiplyScalar(g * 0.6);
+          mat.opacity = g > 0 ? 0.85 : 0;
+        });
+      }
+      const m = mesh(new T.PlaneGeometry(width, height), mat, 'mounting', z, id);
       m.position.set((minx + maxx) / 2, (miny + maxy) / 2, z);
       m.userData.extraTexture = tex;
     }
   }
 
+  // Fast-path update for master power (`lights`) and `dimming` without rebuilding geometry.
+  setLighting(s: SceneInput) {
+    this.state = s;
+    for (const fn of this.lightUpdaters) fn(s);
+    this.draw();
+  }
+
   // Environment (time of day) and camera exposure. Never touches emission.
   setEnvironment(s: SceneInput) {
+    this.state = s;
     const e = environments[s.environment];
     this.scene.background = new T.Color(e.background);
     this.scene.environmentIntensity = e.ambient;
@@ -714,6 +774,15 @@ export class SignScene {
 
   // Forming study: the selected element's return strips, progressively bent.
   buildBend(s: SceneInput) {
+    this.state = s;
+    if (this.forming) {
+      this.forming.traverse((o: any) => {
+        o.geometry?.dispose();
+        if (o.material) for (const m of Array.isArray(o.material) ? o.material : [o.material]) m.dispose();
+      });
+      this.group.remove(this.forming);
+      this.forming = null;
+    }
     this.layers.forEach((g) => (g.visible = false));
     const e = s.layout.elements.find((x) => x.id === s.selected),
       part = this.worldParts.find((p) => p.id === s.selected);
@@ -745,7 +814,19 @@ export class SignScene {
     this.draw();
   }
 
-  fit(kind: 'perspective' | 'front' | 'rear' = 'perspective') {
+  zoom(scale: number) {
+    const offset = this.camera.position.clone().sub(this.controls.target);
+    const nextLen = Math.max(
+      this.controls.minDistance,
+      Math.min(this.controls.maxDistance, offset.length() * scale),
+    );
+    offset.setLength(nextLen);
+    this.camera.position.copy(this.controls.target).add(offset);
+    this.controls.update();
+    this.draw();
+  }
+
+  fit(kind: 'perspective' | 'front' | 'rear' | 'side' | 'top' = 'perspective') {
     const s = this.state;
     if (!s) return;
     const n = LAYERS.length - 1;
@@ -786,8 +867,41 @@ export class SignScene {
         ? new T.Vector3(0, 0, dist)
         : kind === 'rear'
           ? new T.Vector3(-dist * 0.12, dist * 0.12, -dist)
-          : new T.Vector3(dist * 0.17, dist * 0.115, dist);
+          : kind === 'side'
+            ? new T.Vector3(dist * 0.92, dist * 0.08, dist * 0.38)
+            : kind === 'top'
+              ? new T.Vector3(0, dist * 0.9, dist * 0.42)
+              : new T.Vector3(dist * 0.17, dist * 0.115, dist);
     this.camera.position.copy(center).add(off);
+    this.camera.lookAt(center);
+    this.controls.update();
+    this.draw();
+  }
+
+  // Frame the currently selected element(s) in the 3D view without isolating them.
+  focusSelection() {
+    const s = this.state;
+    if (!s || s.mode === 'bend') return this.fit('perspective');
+    const sel = selectionOf(s);
+    if (!sel.size) return this.fit('perspective');
+    const bounds = new T.Box3();
+    for (const layer of this.layers.values()) {
+      if (!layer.visible) continue;
+      for (const o of layer.children) if (o.visible && sel.has(o.userData.part)) bounds.expandByObject(o);
+    }
+    if (bounds.isEmpty()) return this.fit('perspective');
+    const center = bounds.getCenter(new T.Vector3()),
+      size = bounds.getSize(new T.Vector3()),
+      w = Math.max(size.x, 0.18),
+      h = Math.max(size.y, 0.18),
+      depth = Math.max(size.z, 0.08),
+      need = Math.max(w / this.camera.aspect, h),
+      dist = (need / (2 * Math.tan((this.camera.fov * Math.PI) / 360))) * 1.45 + depth * 0.8;
+    const dir = this.camera.position.clone().sub(this.controls.target);
+    if (dir.lengthSq() < 1e-4) dir.set(0.17, 0.115, 1);
+    dir.normalize();
+    this.controls.target.copy(center);
+    this.camera.position.copy(center).addScaledVector(dir, dist);
     this.camera.lookAt(center);
     this.controls.update();
     this.draw();

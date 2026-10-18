@@ -8,10 +8,13 @@ import { computeLayout, sceneInput } from '../domain/layout.ts';
 import { fabricationPlan } from '../fabrication/plan.ts';
 import { setMode, viewer } from './actions.ts';
 import {
+  clearSelection,
   getState,
+  isolate,
   say,
   select,
   setView,
+  toggleHidden,
   toggleSelect,
   showAll,
   useApp,
@@ -19,7 +22,19 @@ import {
   useView,
 } from './store.ts';
 
-export function Viewport({ traceCanvas }: { traceCanvas: RefObject<HTMLCanvasElement | null> }) {
+export function Viewport({
+  traceCanvas,
+  leftOpen = true,
+  rightOpen = true,
+  onToggleLeft,
+  onToggleRight,
+}: {
+  traceCanvas: RefObject<HTMLCanvasElement | null>;
+  leftOpen?: boolean;
+  rightOpen?: boolean;
+  onToggleLeft?: () => void;
+  onToggleRight?: () => void;
+}) {
   const design = useDesign(),
     view = useView(),
     message = useApp((s) => s.message);
@@ -32,9 +47,11 @@ export function Viewport({ traceCanvas }: { traceCanvas: RefObject<HTMLCanvasEle
 
   useEffect(() => {
     try {
-      viewer.current = new SignScene(host.current!, (id: string, add: boolean) =>
-        add ? toggleSelect(id) : select(id),
-      );
+      viewer.current = new SignScene(host.current!, (id: string | null, add: boolean) => {
+        if (!id) clearSelection();
+        else if (add) toggleSelect(id);
+        else select(id);
+      });
     } catch (e) {
       console.error(e);
       setNo3d(true);
@@ -58,18 +75,30 @@ export function Viewport({ traceCanvas }: { traceCanvas: RefObject<HTMLCanvasEle
     };
   }, [artwork?.imageData]);
 
-  // Full rebuild: design changes and view options that change geometry or lighting.
+  // Full rebuild only when design geometry, artwork texture, or 3D/bend mode changes.
   const bendTarget = view.mode === 'bend' ? view.selected : null;
   useEffect(() => {
     const v = viewer.current;
     if (!v || !ready) return;
     v.build(sceneInput(design, getState().view), art!.canvas);
-  }, [design, ready, art, view.environment, view.lights, view.dimming, view.mode, view.bend, bendTarget]);
+  }, [design, ready, art, view.mode, bendTarget]);
 
-  // Exposure is a camera setting: no rebuild.
+  // Fast environment & camera exposure update (no geometry rebuild).
   useEffect(() => {
     if (ready && viewer.current?.state) viewer.current.setEnvironment(sceneInput(design, view));
-  }, [ready, view.exposure]);
+  }, [ready, design, view.environment, view.exposure]);
+
+  // Fast master lighting & dimming update (no geometry rebuild).
+  useEffect(() => {
+    if (ready && viewer.current?.state) viewer.current.setLighting(sceneInput(design, view));
+  }, [ready, design, view.lights, view.dimming]);
+
+  // Fast forming study strip update when scrubbing bend progress (no full board rebuild).
+  useEffect(() => {
+    if (ready && view.mode === 'bend' && viewer.current?.state) {
+      viewer.current.buildBend(sceneInput(design, view));
+    }
+  }, [ready, design, view.mode, view.bend]);
 
   // Cheap visibility pass: stage, layers, explode, isolation, selection.
   useEffect(() => {
@@ -79,6 +108,7 @@ export function Viewport({ traceCanvas }: { traceCanvas: RefObject<HTMLCanvasEle
     v.setVisibility(v.state);
   }, [
     ready,
+    design,
     view.step,
     view.layers,
     view.explode,
@@ -103,27 +133,44 @@ export function Viewport({ traceCanvas }: { traceCanvas: RefObject<HTMLCanvasEle
   const selected = artwork?.elements.find((e) => e.id === view.selected);
   const group = selected && artwork?.groups.find((g) => g.id === selected.group);
   const s = design.settings,
-    layout = computeLayout(design);
+    layout = computeLayout(design),
+    placed = selected ? layout.elements.find((e) => e.id === selected.id) : undefined,
+    placedDims =
+      placed && placed.parts.length
+        ? `${Math.round(placed.bounds[2] - placed.bounds[0])} × ${Math.round(placed.bounds[3] - placed.bounds[1])} × ${+(Math.max(...placed.parts.map((p) => p.z1)) - placed.base).toFixed(1)} mm`
+        : null;
 
   return (
     <main>
       <div className="viewportbar">
-        <div className="viewtabs">
-          {(
-            [
-              ['3d', '3D assembly'],
-              ['2d', '2D trace'],
-              ['bend', 'Forming study'],
-            ] as const
-          ).map(([m, label]) => (
-            <button key={m} className={view.mode === m ? 'active' : ''} onClick={() => setMode(m)}>
-              {label}
+        <div className="viewbar-left">
+          {onToggleLeft && !view.presentation && (
+            <button
+              className={'panel-toggle' + (leftOpen ? ' on' : '')}
+              title={leftOpen ? 'Collapse left tools panel ([)' : 'Expand left tools panel ([)'}
+              onClick={onToggleLeft}
+            >
+              ◧
             </button>
-          ))}
+          )}
+          <div className="viewtabs">
+            {(
+              [
+                ['3d', '3D assembly'],
+                ['2d', '2D trace'],
+                ['bend', 'Forming study'],
+              ] as const
+            ).map(([m, label]) => (
+              <button key={m} className={view.mode === m ? 'active' : ''} onClick={() => setMode(m)}>
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
         <div className="lightingbuttons">
           <button
             className={view.lights ? 'poweron' : ''}
+            title="Toggle sign illumination (L)"
             onClick={() => {
               setView({ lights: !view.lights });
               say(
@@ -135,15 +182,26 @@ export function Viewport({ traceCanvas }: { traceCanvas: RefObject<HTMLCanvasEle
           >
             {view.lights ? '● Lights on' : '○ Lights off'}
           </button>
-          {(Object.keys(environments) as Environment[]).map((env) => (
+          <div className="env-pills">
+            {(Object.keys(environments) as Environment[]).map((env) => (
+              <button
+                key={env}
+                className={view.environment === env ? 'envon' : ''}
+                onClick={() => setView({ environment: env })}
+              >
+                {environments[env].label}
+              </button>
+            ))}
+          </div>
+          {onToggleRight && !view.presentation && (
             <button
-              key={env}
-              className={view.environment === env ? 'envon' : ''}
-              onClick={() => setView({ environment: env })}
+              className={'panel-toggle' + (rightOpen ? ' on' : '')}
+              title={rightOpen ? 'Collapse right inspector panel (])' : 'Expand right inspector panel (])'}
+              onClick={onToggleRight}
             >
-              {environments[env].label}
+              ◨
             </button>
-          ))}
+          )}
         </div>
       </div>
       <div id="viewport">
@@ -165,10 +223,26 @@ export function Viewport({ traceCanvas }: { traceCanvas: RefObject<HTMLCanvasEle
           </span>
           <b>{artwork?.approved ? 'ARTWORK REVIEWED / CONCEPT MODEL' : 'ARTWORK REVIEW PENDING'}</b>
         </div>
-        {selected && (
+        {selected && view.selectionActive && (
           <div id="selectionbadge">
-            {selected.name} / {group?.name} / {constructionNames[selected.type]}
-            {selected.override ? ' (override)' : ''}
+            <div className="sel-info">
+              <b>{selected.name}</b> · {group?.name} · {constructionNames[selected.type]}
+              {selected.override ? ' (override)' : ''}
+              {placedDims && <span className="sel-dims">{placedDims}</span>}
+            </div>
+            <div className="sel-actions">
+              {view.mode === '3d' && (
+                <button title="Frame selected part in camera (F)" onClick={() => viewer.current?.focusSelection()}>
+                  Frame · F
+                </button>
+              )}
+              <button title="Isolate selected part (I)" onClick={() => isolate(selected.id)}>
+                Isolate · I
+              </button>
+              <button title="Hide / show selected part (H)" onClick={() => toggleHidden([selected.id])}>
+                Hide · H
+              </button>
+            </div>
           </div>
         )}
         {view.isolate && (
@@ -180,17 +254,54 @@ export function Viewport({ traceCanvas }: { traceCanvas: RefObject<HTMLCanvasEle
           </div>
         )}
         <div className="camera" hidden={view.mode === '2d'}>
-          {(['front', 'perspective', 'rear'] as const).map((k) => (
-            <button key={k} onClick={() => viewer.current?.fit(k)}>
-              {k[0].toUpperCase() + k.slice(1)}
+          {(
+            [
+              ['front', 'Front', 'Front elevation (1)'],
+              ['perspective', '3D', '3D perspective view (2)'],
+              ['side', 'Side', 'Side profile view'],
+              ['top', 'Top', 'Top plan view'],
+              ['rear', 'Rear', 'Rear frame & wiring view (3)'],
+            ] as const
+          ).map(([k, label, tip]) => (
+            <button key={k} title={tip} onClick={() => viewer.current?.fit(k)}>
+              {label}
             </button>
           ))}
-          <button onClick={() => viewer.current?.fit()}>Fit view</button>
-          <button id="showall" onClick={() => showAll()}>
+          <span className="cam-sep" />
+          <button title="Zoom in" onClick={() => viewer.current?.zoom(0.8)}>
+            ＋
+          </button>
+          <button title="Zoom out" onClick={() => viewer.current?.zoom(1.25)}>
+            －
+          </button>
+          {view.selectionActive && selected && (
+            <button title="Zoom to selected element (F)" onClick={() => viewer.current?.focusSelection()}>
+              Frame · F
+            </button>
+          )}
+          <button title="Fit entire board in view" onClick={() => viewer.current?.fit()}>
+            Fit
+          </button>
+          {view.mode === '3d' && (
+            <label className="cam-explode" title="Explode 3D layers rear-to-front">
+              <span>Explode</span>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                value={view.explode}
+                onChange={(e) => setView({ explode: +e.target.value })}
+              />
+            </label>
+          )}
+          <button id="showall" title="Reset view, layers and isolation (Esc)" onClick={() => showAll()}>
             Show all
           </button>
         </div>
-        <div className="viewhint">Drag to orbit · scroll / pinch to zoom · click a part to inspect</div>
+        <div className="viewhint">
+          Drag to orbit · right-drag to pan · scroll to zoom · click part to inspect · double-click or F to frame · ?
+          for shortcuts
+        </div>
       </div>
       {view.mode === 'bend' && <BendControls />}
       <div className="statusbar">
@@ -361,20 +472,30 @@ function TraceView({
     size,
   ]);
 
+  const hitAt = (clientX: number, clientY: number, el: HTMLCanvasElement) => {
+    if (!artwork) return undefined;
+    const rect = el.getBoundingClientRect(),
+      { scale, tx, ty } = xf.current,
+      pt = [(clientX - rect.left - tx) / scale, (clientY - rect.top - ty) / scale];
+    return [...artwork.elements]
+      .reverse()
+      .find((p) => p.regions.some((r) => inside(pt, r.outer) && !r.holes.some((h) => inside(pt, h))));
+  };
+
   return (
     <canvas
       id="tracecanvas"
       ref={canvasRef}
       hidden={hidden}
+      onMouseMove={(e) => {
+        e.currentTarget.style.cursor = hitAt(e.clientX, e.clientY, e.currentTarget) ? 'pointer' : 'default';
+      }}
       onClick={(e) => {
         if (!artwork) return;
-        const rect = e.currentTarget.getBoundingClientRect(),
-          { scale, tx, ty } = xf.current,
-          pt = [(e.clientX - rect.left - tx) / scale, (e.clientY - rect.top - ty) / scale];
-        const hit = [...artwork.elements]
-          .reverse()
-          .find((p) => p.regions.some((r) => inside(pt, r.outer) && !r.holes.some((h) => inside(pt, h))));
-        if (hit) (e.shiftKey || e.metaKey || e.ctrlKey ? toggleSelect : select)(hit.id);
+        const hit = hitAt(e.clientX, e.clientY, e.currentTarget);
+        const add = e.shiftKey || e.metaKey || e.ctrlKey;
+        if (hit) (add ? toggleSelect : select)(hit.id);
+        else if (!add) clearSelection();
       }}
     />
   );

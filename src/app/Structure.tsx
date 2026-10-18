@@ -2,7 +2,7 @@
 // (double-click), show/hide, drag letters onto a group to move them, drag groups to reorder,
 // and a per-group menu (isolate, merge, delete, reorder).
 import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent, type MouseEvent } from 'react';
-import type { Artwork, ArtworkGroup, ConstructionType } from '../domain/project.ts';
+import type { Artwork, ArtworkElement, ArtworkGroup, ConstructionType, DesignSettings } from '../domain/project.ts';
 import {
   createGroup,
   deleteGroup,
@@ -17,6 +17,7 @@ import {
   isolate,
   say,
   select,
+  selectBoard,
   selectGroup,
   selectionIds,
   selectMany,
@@ -38,26 +39,53 @@ export const shortType: Record<ConstructionType, string> = {
   omit: 'Excluded',
 };
 
+export const BARE_METAL_SWATCH = 'linear-gradient(135deg, #f0f4f6 0%, #b8c2c7 48%, #e2e8eb 75%, #8f9ba1 100%)';
+
 // One undoable edit of the artwork; errors from the operation are shown, not thrown.
-export function editArtwork(fn: (a: Artwork) => Artwork, message?: string) {
+export function editArtwork(fn: (a: Artwork) => Artwork, message?: string, coalesceKey?: string) {
   try {
-    editDesign((d) => (d.artwork ? { ...d, artwork: fn(d.artwork) } : d), message);
+    editDesign((d) => (d.artwork ? { ...d, artwork: fn(d.artwork) } : d), message, coalesceKey);
   } catch (e) {
     say((e as Error).message);
   }
 }
 
-export const groupColours = (a: Artwork, g: ArtworkGroup) =>
-  g.faceColor
-    ? [g.faceColor]
-    : [...new Set(a.elements.filter((e) => e.group === g.id).map((e) => e.faceColor ?? e.color))].slice(0, 4);
+export function elementFaceColour(
+  e: ArtworkElement,
+  g: ArtworkGroup | undefined,
+  settings?: DesignSettings,
+): string {
+  const explicit = e.faceColor ?? g?.faceColor;
+  if (explicit) return explicit;
+  const effType = e.override ? e.type : (g?.type ?? e.type);
+  if (effType === 'halo' || effType === 'metal') return 'metal';
+  if (settings && !settings.keepart) return settings.facecolor;
+  return e.color;
+}
 
-export function Swatch({ colors }: { colors: string[] }) {
+export const groupColours = (a: Artwork, g: ArtworkGroup, settings?: DesignSettings): string[] => {
+  if (g.faceColor) return [g.faceColor];
+  const els = a.elements.filter((e) => e.group === g.id);
+  if (!els.length) {
+    if (g.type === 'halo' || g.type === 'metal') return ['metal'];
+    return [settings && !settings.keepart ? settings.facecolor : '#cccccc'];
+  }
+  return [...new Set(els.map((e) => elementFaceColour(e, g, settings)))].slice(0, 4);
+};
+
+export function Swatch({ colors, title }: { colors: string[]; title?: string }) {
+  const norm = colors.length ? colors : ['#cccccc'];
+  const toCss = (c: string) => (c === 'metal' ? '#c8d1d5' : c);
   const bg =
-    colors.length > 1
-      ? `conic-gradient(${colors.map((c, i) => `${c} ${(i * 100) / colors.length}% ${((i + 1) * 100) / colors.length}%`).join(',')})`
-      : (colors[0] ?? '#ccc');
-  return <i className="swatch" style={{ background: bg }} />;
+    norm.length === 1 && norm[0] === 'metal'
+      ? BARE_METAL_SWATCH
+      : norm.length > 1
+        ? `conic-gradient(${norm.map((c, i) => `${toCss(c)} ${(i * 100) / norm.length}% ${((i + 1) * 100) / norm.length}%`).join(',')})`
+        : toCss(norm[0]);
+  const label =
+    title ??
+    norm.map((c) => (c === 'metal' ? 'Bare brushed metal' : c.toUpperCase())).join(' · ');
+  return <i className="swatch" style={{ background: bg }} title={label} />;
 }
 
 type Rename = { kind: 'group' | 'element'; id: string } | null;
@@ -158,11 +186,13 @@ export function StructureTree() {
     }
   };
 
+  const boardSelected = view.selectedGroup === '__board' || (!view.selectedGroup && !sel.size);
+
   return (
     <div className="tree" onDragEnd={() => setDropOn(null)}>
       <div className="tree-tools">
         <button onClick={newGroup} title="New group (from the selected letters, if any)">
-          + Group{sel.size ? ' from selection' : ''}
+          + Group{sel.size && !view.selectedGroup ? ' from selection' : ''}
         </button>
         <button
           onClick={() => setCollapsed(collapsed.size ? new Set() : new Set(a.groups.map((g) => g.id)))}
@@ -176,11 +206,15 @@ export function StructureTree() {
           </button>
         )}
       </div>
-      <div className="tree-row board">
+      <div
+        className={'tree-row board' + (boardSelected ? ' active' : '')}
+        title="Click to inspect and edit the backing board"
+        onClick={() => selectBoard()}
+      >
         <i className="swatch" style={{ background: design.settings.boardcolor }} />
-        <span className="name">Board</span>
+        <span className="name">Board structure</span>
         <small className="badge">
-          {design.settings.width} × {design.settings.height}
+          {design.settings.width} × {design.settings.height} mm
         </small>
       </div>
       {a.groups.map((g, gi) => {
@@ -216,7 +250,7 @@ export function StructureTree() {
               >
                 {open ? '▾' : '▸'}
               </button>
-              <Swatch colors={groupColours(a, g)} />
+              <Swatch colors={groupColours(a, g, design.settings)} />
               {nameField('group', g.id, g.name)}
               <small className="badge">{shortType[g.type]}</small>
               <small className="count">{els.length}</small>
@@ -255,7 +289,7 @@ export function StructureTree() {
                   onDragStart={(ev) => dragElements(ev, e.id)}
                   onClick={(ev) => clickElement(ev, e.id)}
                 >
-                  <Swatch colors={[e.faceColor ?? g.faceColor ?? e.color]} />
+                  <Swatch colors={[elementFaceColour(e, g, design.settings)]} />
                   {nameField('element', e.id, e.name)}
                   {(e.override || e.faceColor) && (
                     <small className="badge ovr" title="Differs from its group">

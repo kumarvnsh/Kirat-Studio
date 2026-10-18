@@ -1,6 +1,6 @@
 // Structure edits on an artwork. Pure and immutable: each returns a new Artwork (one undo step when
 // passed through editDesign). Unknown ids are ignored rather than throwing, except where noted.
-import type { Artwork, ArtworkGroup, ConstructionType } from '../domain/project.ts';
+import type { Artwork, ArtworkGroup, ConstructionType, GroupLight } from '../domain/project.ts';
 
 const HEX = /^#[0-9a-f]{6}$/i;
 
@@ -64,7 +64,20 @@ export type GroupPatch = {
   faceColor?: string | null; // null clears
   returnColor?: string | null;
   params?: Record<string, number>;
+  light?: GroupLight | null; // merged into the group's light; null resets to board defaults
 };
+
+// Returns an error message for out-of-range light settings, or null.
+export function checkLight(l: GroupLight): string | null {
+  if (l.mode !== undefined && !['white', 'rgb', 'artwork'].includes(l.mode)) return 'Unknown light mode.';
+  if (l.temp !== undefined && !(Number.isFinite(l.temp) && l.temp >= 2000 && l.temp <= 10000))
+    return 'Colour temperature must be 2000–10000 K.';
+  if (l.color !== undefined && !HEX.test(l.color)) return 'Colours are #rrggbb.';
+  if (l.dimming !== undefined && !(Number.isFinite(l.dimming) && l.dimming >= 0.1 && l.dimming <= 1))
+    return 'Dimming must be 10–100%.';
+  if (l.on !== undefined && typeof l.on !== 'boolean') return 'Invalid on/off.';
+  return null;
+}
 
 export function setGroup(a: Artwork, id: string, patch: GroupPatch): Artwork {
   const g0 = a.groups.find((g) => g.id === id);
@@ -75,6 +88,13 @@ export function setGroup(a: Artwork, id: string, patch: GroupPatch): Artwork {
     delete g.params; // params belong to the previous recipe
   }
   if (patch.params) g.params = { ...g.params, ...patch.params };
+  if (patch.light === null) delete g.light;
+  else if (patch.light) {
+    const light = { ...g.light, ...patch.light },
+      bad = checkLight(light);
+    if (bad) throw Error(bad);
+    g.light = light;
+  }
   for (const k of ['faceColor', 'returnColor'] as const)
     if (patch[k] === null) delete g[k];
     else if (patch[k] !== undefined) {

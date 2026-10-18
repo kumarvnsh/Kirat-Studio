@@ -14,6 +14,7 @@ import {
 import { autoGroup } from '../artwork/grouping.js';
 import { checkParams } from '../domain/recipes.ts';
 import { defaultFabrication } from '../fabrication/plan.ts';
+import { checkLight } from '../editor/artworkOps.ts';
 
 export const FORMAT = 'kirat-signage-studio';
 export const VERSION = 4;
@@ -163,7 +164,8 @@ function validateArtwork(a: Artwork) {
       !isType(g.type) ||
       (g.params !== undefined && (typeof g.params !== 'object' || checkParams(g.type, g.params))) ||
       !optColour(g.faceColor) ||
-      !optColour(g.returnColor)
+      !optColour(g.returnColor) ||
+      (g.light !== undefined && (typeof g.light !== 'object' || checkLight(g.light) !== null))
     )
       throw Error('Invalid artwork group' + (g.params ? ': ' + checkParams(g.type, g.params) : '.'));
   if (!Array.isArray(a.elements) || a.elements.length > 100)

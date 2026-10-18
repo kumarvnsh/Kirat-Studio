@@ -4,6 +4,7 @@
 import { inside, perimeter } from '../artwork/contours.js';
 import { recipes, resolveParams, VINYL_THICKNESS } from './recipes.ts';
 import { assemblySteps, visibleLayers } from './assembly.ts';
+import { isRGB, resolveLight, type ResolvedLight } from './lighting.ts';
 import type {
   ConstructionType,
   DesignSettings,
@@ -26,6 +27,7 @@ export type ElementLayout = {
   params: Record<string, number>;
   faceColor?: string; // resolved: letter override, else group colour; unset = artwork colours
   returnColor?: string; // painted returns; unset = natural metal
+  light?: ResolvedLight; // lit constructions only
   regions: Region[];
   bounds: [number, number, number, number]; // x0, y0, x1, y1
   perimeter: number; // all outer and inner contours
@@ -170,6 +172,7 @@ export function computeLayout(design: DesignState): Layout {
       const recipe = recipes[e.type],
         group = a.groups.find((g) => g.id === e.group),
         params = resolveParams(e.type, group),
+        light = resolveLight(group, e, s.ledTemp),
         regions = e.regions.map((r) => ({ outer: r.outer.map(map), holes: r.holes.map((h) => h.map(map)) })),
         m = recipe.materials;
       const parts: LetterPart[] = [];
@@ -181,7 +184,13 @@ export function computeLayout(design: DesignState): Layout {
       if (params.standoff > 0) add('standoff', 'mounting', params.standoff, m.standoff);
       if (recipe.lit) {
         add('back', 'backs', params.back, `${m.back} ${params.back} mm`);
-        parts.push({ kind: 'leds', layer: 'leds', material: m.leds!, z0: z, z1: z + LED_SIZE.d });
+        parts.push({
+          kind: 'leds',
+          layer: 'leds',
+          material: isRGB(light.mode) ? m.leds!.replace('LED module', 'RGB LED module') : m.leds!,
+          z0: z,
+          z1: z + LED_SIZE.d,
+        });
         add('returns', 'returns', params.depth, `${m.returns} ${params.gauge} mm`);
         add('face', 'faces', params.face, `${m.face} ${params.face} mm`);
         // Trim cap wraps the face edge and the top of the return; it doesn't add to the stack below it.
@@ -210,6 +219,7 @@ export function computeLayout(design: DesignState): Layout {
         group: e.group,
         params,
         faceColor: e.faceColor ?? group?.faceColor,
+        light: recipe.lit ? light : undefined,
         returnColor: group?.returnColor,
         regions,
         bounds: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)],

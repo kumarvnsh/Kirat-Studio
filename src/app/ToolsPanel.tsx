@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   checkSettings,
+  defaultSettings,
   LAYER_COUNT,
   LAYERS,
   numericSettings,
@@ -33,9 +34,24 @@ import {
 } from './store.ts';
 import { assemblySteps } from '../domain/assembly.ts';
 import { MakePanel } from './MakePanel.tsx';
+import { CrossSectionDiagram } from './ConstructionDiagram.tsx';
+import { ScrubInput } from './ScrubInput.tsx';
 
-export function ToolsPanel() {
-  const [tab, setTab] = useState<'art' | 'board' | 'build' | 'make'>('art');
+export type ToolTab = 'art' | 'board' | 'build' | 'make';
+
+export function ToolsPanel({
+  activeTab,
+  onTabChange,
+}: {
+  activeTab?: ToolTab;
+  onTabChange?: (t: ToolTab) => void;
+} = {}) {
+  const [localTab, setLocalTab] = useState<ToolTab>('art');
+  const tab = activeTab ?? localTab;
+  const setTab = (t: ToolTab) => {
+    setLocalTab(t);
+    onTabChange?.(t);
+  };
   const [backup] = useState(hasBackup);
   return (
     <aside className="tools">
@@ -209,22 +225,32 @@ function BoardPanel() {
   const settings = useDesign().settings;
   const [draft, setDraft] = useState<DesignSettings>(settings);
   useEffect(() => setDraft(settings), [settings]); // undo/redo/open refresh the form
-  const set = <K extends keyof DesignSettings>(k: K, v: DesignSettings[K]) =>
-    setDraft((d) => ({ ...d, [k]: v }));
+  const commit = (next: DesignSettings, note?: string, coalesceKey?: string) => {
+    setDraft(next);
+    const bad = checkSettings(next);
+    if (bad) return say(bad);
+    editDesign((d) => ({ ...d, settings: next }), note, coalesceKey);
+  };
+  const setLive = <K extends keyof DesignSettings>(
+    k: K,
+    v: DesignSettings[K],
+    note?: string,
+    coalesce = true,
+  ) => commit({ ...draft, [k]: v }, note, coalesce ? `board-${String(k)}` : undefined);
   const num = (k: NumericKey) => {
     const r = numericSettings[k];
     return (
-      <label key={k}>
-        {r.label}
-        <input
-          type="number"
-          min={r.min}
-          max={r.max}
-          step={r.step}
-          value={draft[k]}
-          onChange={(e) => set(k, +e.target.value)}
-        />
-      </label>
+      <ScrubInput
+        key={k}
+        label={r.label}
+        min={r.min}
+        max={r.max}
+        step={r.step}
+        unit={'unit' in r ? r.unit : 'mm'}
+        value={draft[k]}
+        onChange={(v, scrubbing) => setLive(k, v, `${r.label} set to ${v} mm.`, scrubbing)}
+        onInvalid={() => say(`${r.label} must be between ${r.min} and ${r.max} mm.`)}
+      />
     );
   };
   const update = () => {
@@ -237,7 +263,7 @@ function BoardPanel() {
   };
   return (
     <section className="panel active">
-      <div className="eyebrow">ASSEMBLY SETTINGS / mm</div>
+      <div className="eyebrow">ASSEMBLY SETTINGS / mm (LIVE SCRUB)</div>
       <h2>The supporting structure.</h2>
       <div className="pair">{(['width', 'height'] as const).map(num)}</div>
       <label>
@@ -247,31 +273,52 @@ function BoardPanel() {
           min={20}
           max={94}
           value={draft.artscale}
-          onChange={(e) => set('artscale', +e.target.value)}
+          onChange={(e) => setLive('artscale', +e.target.value)}
         />
       </label>
       <div className="pair">{(['acp', 'gi', 'frame', 'framewall'] as const).map(num)}</div>
       {num('backing')}
+      <CrossSectionDiagram settings={draft} />
       <StackTable settings={draft} />
       <label>
         ACP finish
-        <input type="color" value={draft.boardcolor} onChange={(e) => set('boardcolor', e.target.value)} />
+        <input
+          type="color"
+          value={draft.boardcolor}
+          onChange={(e) => setLive('boardcolor', e.target.value, 'ACP fascia finish updated.')}
+        />
       </label>
       <label className="check">
-        <input type="checkbox" checked={draft.keepart} onChange={(e) => set('keepart', e.target.checked)} />{' '}
+        <input
+          type="checkbox"
+          checked={draft.keepart}
+          onChange={(e) => setLive('keepart', e.target.checked, undefined, false)}
+        />{' '}
         Preserve artwork colours on faces
       </label>
       <label>
         Uniform face colour
-        <input type="color" value={draft.facecolor} onChange={(e) => set('facecolor', e.target.value)} />
+        <input
+          type="color"
+          value={draft.facecolor}
+          onChange={(e) => setLive('facecolor', e.target.value, 'Uniform face colour updated.')}
+        />
       </label>
-      <button className="full accent" onClick={update}>
-        Update geometry
-      </button>
+      <div className="row">
+        <button className="accent" onClick={update}>
+          Update geometry
+        </button>
+        <button
+          onClick={() =>
+            commit(defaultSettings(), 'Board structure and finish reset to nominal defaults.')
+          }
+        >
+          Reset defaults
+        </button>
+      </div>
       <div className="callout">
-        Board layers only. Letter depths, gauges and standoffs belong to each artwork group's construction —
-        edit them in the inspector. Dimensions are nominal; structure, face retention, bend allowance and
-        electrical loading are not engineered here.
+        Drag any dimension label ↔ or use the inputs to update the 3D board live. Letter depths, gauges and
+        standoffs belong to each artwork group's construction in the right-hand inspector.
       </div>
     </section>
   );

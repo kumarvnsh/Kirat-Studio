@@ -53,7 +53,15 @@ export type ArtworkGroup = {
   params?: Record<string, number>;
   faceColor?: string; // face / flat colour for the group; unset = artwork colours or board default
   returnColor?: string; // painted return colour (lit letters); unset = natural metal
+  light?: GroupLight; // lit constructions only; unset fields follow the board defaults
 };
+
+// Per-group lighting (one circuit per group).
+//   white   — white LEDs at `temp` K (default: settings.ledTemp)
+//   rgb     — RGB LEDs set to `color`
+//   artwork — RGB LEDs matching each letter's own colour
+export type LightMode = 'white' | 'rgb' | 'artwork';
+export type GroupLight = { mode?: LightMode; temp?: number; color?: string; dimming?: number; on?: boolean };
 
 export type Artwork = {
   elements: ArtworkElement[];

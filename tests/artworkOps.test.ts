@@ -118,3 +118,13 @@ test('letter overrides: construction and colour, and back to inherit', () => {
 test('palette lists distinct artwork colours, heaviest first', () => {
   assert.deepEqual(artworkPalette(art()), ['#ffa030', '#161f2b']);
 });
+
+test('group lighting merges, validates and resets', async () => {
+  let a = setGroup(art(), 'g1', { light: { mode: 'rgb', color: '#00ff00' } });
+  a = setGroup(a, 'g1', { light: { dimming: 0.4 } });
+  assert.deepEqual(a.groups[0].light, { mode: 'rgb', color: '#00ff00', dimming: 0.4 });
+  assert.throws(() => setGroup(a, 'g1', { light: { dimming: 2 } }), /Dimming/);
+  assert.throws(() => setGroup(a, 'g1', { light: { temp: 900 } }), /temperature/);
+  a = setGroup(a, 'g1', { light: null });
+  assert.equal(a.groups[0].light, undefined);
+});

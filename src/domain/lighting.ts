@@ -7,6 +7,8 @@
 // surroundings are brighter and the camera exposes for them.
 // Presentation preview only: values are tuned by eye, not calibrated against photographs.
 
+import type { ArtworkElement, ArtworkGroup, LightMode } from './project.ts';
+
 export type Environment = 'day' | 'dusk' | 'night';
 
 export type EnvironmentPreset = {
@@ -88,3 +90,16 @@ export function kelvinToHex(kelvin: number): string {
   const b = t >= 66 ? 255 : t <= 19 ? 0 : clamp(138.5177312231 * Math.log(t - 10) - 305.0447927307);
   return '#' + [r, g, b].map((v) => Math.round(v).toString(16).padStart(2, '0')).join('');
 }
+
+// A lit element's circuit after applying board defaults: what the LEDs emit and how strongly.
+export type ResolvedLight = { mode: LightMode; on: boolean; dimming: number; color: string };
+
+export function resolveLight(group: ArtworkGroup | undefined, e: ArtworkElement, defaultTemp: number): ResolvedLight {
+  const l = group?.light ?? {},
+    mode = l.mode ?? 'white';
+  const color =
+    mode === 'rgb' && l.color ? l.color : mode === 'artwork' ? e.color : kelvinToHex(l.temp ?? defaultTemp);
+  return { mode, on: l.on ?? true, dimming: l.dimming ?? 1, color };
+}
+
+export const isRGB = (mode: LightMode) => mode !== 'white';
