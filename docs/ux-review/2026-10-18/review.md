@@ -74,4 +74,6 @@ Navy for structure and primary actions; warm brass for active focus and accents;
 - [Board inspector](16-board-inspector.png)
 
 ## Approval status
-This is an audit and a set of proposed directions. No redesign has been approved. A final implementation specification and plan should follow the user's choice and feedback.
+The user selected Focused professional studio, approved its screen designs and written specification, and requested new image_gen construction references. Four generated references are saved in `public/images/construction-references/`; their prompts and provenance are documented there. The implementation plan is saved in `docs/superpowers/plans/2026-10-18-focused-professional-studio.md`. The application UI has not yet been redesigned.
+
+- [Generated construction-reference gallery](22-generated-letter-references.png)

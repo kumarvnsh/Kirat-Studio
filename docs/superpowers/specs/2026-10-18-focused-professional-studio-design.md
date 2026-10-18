@@ -1,7 +1,7 @@
 # Focused professional studio — Kirat Studio design specification
 
 Date: 18 October 2026
-Status: screen design approved; written specification awaiting final user review.
+Status: written specification approved by the user; image-reference addition authorized on 18 October 2026.
 
 ## Objective
 
@@ -71,6 +71,10 @@ Forming study opens from a selected supported return strip, with part name, stra
 “No geometric cutting issues” applies only to current checks. Show artwork review, geometric checks, machine limitations and nesting limitations separately. Exports remain available under the current application's authority model; pending review is disclosed, not converted into an invented production-approval gate.
 
 ## Artwork workflow
+
+### Generated construction references
+
+Use the four new image_gen references in `public/images/construction-references/` for the illuminated construction chooser: `front-lit.png` → front, `halo-lit.png` → halo, `front-and-halo.png` → fronthalo, and `full-acrylic.png` → fullacrylic. Their [asset notes and final prompts](../../../public/images/construction-references/README.md) describe provenance and intended use. Keep the native SVG references for other construction types and as image-load fallbacks. These are appearance references; live dimensioned anatomy remains derived from the project. Present images at a consistent 3:2 ratio without cropping the silhouette or halo. Lazy-load the chooser images and provide construction-specific labels and alt text.
 
 Import opens a focused source-aware drawer/dialog; cancellation preserves the existing project. New imports select the resulting board and show groups for review.
 
