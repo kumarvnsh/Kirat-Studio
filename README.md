@@ -26,6 +26,8 @@ Requires Node 20+.
 | `src/domain/lighting.ts` | Lighting model: environments (day/dusk/night), emission, exposure, LED colour temperature |
 | `src/app/` | React UI (`App`, `ToolsPanel`, `Viewport`, `Inspector`), store (`store.ts`), cross-panel actions (`actions.ts`), styles |
 | `src/artwork/` | SVG vector import (`svg.ts`), raster tracing (`contours.js`, `import.ts`), dot attachment and grouping (`grouping.js`) |
+| `src/domain/assembly.ts` | Dependency-ordered assembly steps and the layers each reveals |
+| `src/fabrication/` | Return-strip bend schedules (`bending.ts`), tool compensation and cut checks (`cutting.ts`), fabrication plan + CSV (`plan.ts`), DXF via maker.js (`dxf.ts`) |
 | `src/editor/history.ts` | Immutable undo/redo over designs |
 | `src/storage/project.ts` | Project file format v4, v1–v3 migration, validation, browser autosave |
 | `src/scene/scene.ts` | Three.js display of the layout (mm → m); HDR pipeline via pmndrs/postprocessing: exposure → bloom → AgX tone mapping; PBR finishes; stills |
@@ -33,13 +35,13 @@ Requires Node 20+.
 | `tests/` | `node --test` checks (`.js` and `.ts`; Node 22 strips types natively) |
 | `reference/prototype/` | Byte-exact copy of the original ChatGPT-hosted prototype (v02). Do not edit. |
 
-Further folders from the roadmap (`assembly/`, `fabrication/`, `catalog/`, `digital/`) get created when their first module lands.
+Further folders from the roadmap (`catalog/`, `digital/`) get created when their first module lands.
 
 ## State rules
 
 - **Design** (`design.present`): settings and artwork. Every edit goes through `editDesign()` and is one undo step. Saved and autosaved.
 - **View**: mode, selection, isolation, stage, explode, day/night, lights, presentation. Changed with `setView()`. Never saved into the design, never undone.
-- **Fabrication**: reserved slot in the file format (Milestone E).
+- **Fabrication**: cutting and bending settings (`FabricationState`). Saved and autosaved with the project, not part of the design's undo history.
 - The renderer only reads `sceneInput(design, view)`; it never writes back.
 - All physical dimensions are computed once in `domain/layout.ts`. The scene, inspector and BOM read the same layout.
 - Recipe params live on artwork groups (`group.params`) and reset when the group's construction changes.
@@ -64,6 +66,14 @@ Milestone D (customer-ready visuals) done for presentation level:
 - PBR finishes: clear-coated ACP, zinc GI, primed MS frame, aluminium returns, stainless halo faces, glossy cast acrylic, matte vinyl.
 - Presentation sheet export: day and night stills at 2400 px framed from the current viewing direction, title block, construction per group, LED colour, disclaimer.
 - Not done: a *calibrated* preview compared against photographs of a real sample (needs measurements), path-traced stills.
+
+Milestone E (fabrication preview) done at geometric level:
+
+- Return strips: one schedule per outer contour and counter. Seam at the middle of the longest straight run; bends at their distance from the seam, angle and direction (convex / concave); small turns accumulate so curves keep their full angle; runs of small bends are grouped into curves with an estimated radius. Flat-strip diagram in the Make tab, CSV export.
+- Cutting: router (tool radius) or laser (half kerf) compensation with Clipper; checks for counters too small for the tool, counter slots the tool can't reach, and strokes thinner than a minimum. Compensated paths shown over the artwork in the 2D view. Approved outlines are never changed.
+- DXF (maker.js, mm): *-OUTLINE and *-CUT layers for backs, faces, flat letters and vinyl; flat strips with BEND-CONVEX / BEND-CONCAVE lines and labels. Parts at sign positions, not nested.
+- Assembly: 10–11 dependency-ordered steps (frame → GI → backing → ACP; backs → returns → LEDs → faces; mount; power; test) with a parts list per step; play / previous / next / replay.
+- Not yet: bend allowance and machine calibration profiles, notching, acrylic heat-bending, nesting and offcut tracking, wiring diagram.
 
 Known limits, deliberately left for later milestones: module/PSU ratings are placeholders until the verified atlas (F); no ACP seam or fixing pattern, cable holes in frame members, or wiring diagram (E); the face-retention method beyond trim cap (e.g. screws, inset) is not modelled.
 

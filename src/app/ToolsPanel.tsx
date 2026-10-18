@@ -12,10 +12,22 @@ import { boardStack, computeLayout, MODULE_W, PSU_LOADING, PSU_W } from '../doma
 import { bom } from '../domain/bom.ts';
 import { kelvinToHex, LED_TEMPS } from '../domain/lighting.ts';
 import { hasBackup, importImage, importSvg, restoreBackup, retrace, setMode } from './actions.ts';
-import { editDesign, say, setTrace, setView, showAll, useApp, useDesign, useView } from './store.ts';
+import {
+  editDesign,
+  getState,
+  say,
+  setTrace,
+  setView,
+  showAll,
+  useApp,
+  useDesign,
+  useView,
+} from './store.ts';
+import { assemblySteps } from '../domain/assembly.ts';
+import { MakePanel } from './MakePanel.tsx';
 
 export function ToolsPanel() {
-  const [tab, setTab] = useState<'art' | 'board' | 'build'>('art');
+  const [tab, setTab] = useState<'art' | 'board' | 'build' | 'make'>('art');
   const [backup] = useState(hasBackup);
   return (
     <aside className="tools">
@@ -25,6 +37,7 @@ export function ToolsPanel() {
             ['art', '01 Artwork'],
             ['board', '02 Board'],
             ['build', '03 Build'],
+            ['make', '04 Make'],
           ] as const
         ).map(([k, label]) => (
           <button key={k} className={tab === k ? 'active' : ''} onClick={() => setTab(k)}>
@@ -35,6 +48,7 @@ export function ToolsPanel() {
       {tab === 'art' && <ArtworkPanel />}
       {tab === 'board' && <BoardPanel />}
       {tab === 'build' && <BuildPanel />}
+      {tab === 'make' && <MakePanel />}
       <div className="toolfooter">
         <a href="https://kirat-signage-atlas.kumarvnsh.chatgpt.site" target="_blank" rel="noopener">
           Open research atlas ↗
@@ -256,40 +270,40 @@ function BoardPanel() {
 }
 
 function BuildPanel() {
-  const view = useView();
+  const view = useView(),
+    design = useDesign(),
+    steps = assemblySteps(design),
+    n = steps.length,
+    current = Math.min(view.step, n),
+    st = steps[current - 1];
   const [playing, setPlaying] = useState(false);
   useEffect(() => {
     if (!playing) return;
     const t = setInterval(() => {
-      setView((v) => {
-        if (v.step >= LAYER_COUNT) setPlaying(false);
-        return { step: Math.min(LAYER_COUNT, v.step + 1) };
-      });
-    }, 1100);
+      const next = Math.min(n, Math.min(getState().view.step, n) + 1);
+      setView({ step: next });
+      if (next >= n) setPlaying(false);
+    }, 1400);
     return () => clearInterval(t);
-  }, [playing]);
-  const step = (n: number) => setView({ step: Math.max(1, Math.min(LAYER_COUNT, n)) });
+  }, [playing, n]);
+  const step = (k: number) => setView({ step: Math.max(1, Math.min(n, k)) });
+  const parts = bom(design).filter((r) => st.adds.includes(r.layer));
   return (
     <section className="panel active">
       <div className="eyebrow">INSPECT THE ASSEMBLY</div>
       <h2>Piece by piece.</h2>
       <LightingControls />
+      <div className="sectionlabel">ASSEMBLY STEPS</div>
       <label>
-        Assembly stage{' '}
+        Step{' '}
         <output>
-          {view.step} / {LAYER_COUNT}
+          {current} / {n}
         </output>
-        <input
-          type="range"
-          min={1}
-          max={LAYER_COUNT}
-          value={view.step}
-          onChange={(e) => step(+e.target.value)}
-        />
+        <input type="range" min={1} max={n} value={current} onChange={(e) => step(+e.target.value)} />
       </label>
       <div className="row">
-        <button onClick={() => step(view.step - 1)}>← Previous</button>
-        <button onClick={() => step(view.step + 1)}>Next →</button>
+        <button onClick={() => step(current - 1)}>← Previous</button>
+        <button onClick={() => step(current + 1)}>Next →</button>
       </div>
       <button
         className="full accent"
@@ -301,8 +315,37 @@ function BuildPanel() {
           setPlaying(!playing);
         }}
       >
-        {playing ? 'Pause assembly' : 'Play assembly'}
+        {playing ? 'Pause assembly' : current >= n ? 'Replay assembly' : 'Play assembly'}
       </button>
+      <div className="callout">
+        <b>
+          {current}. {st.title}.
+        </b>{' '}
+        {st.description}
+        {st.dependsOn.length > 0 && (
+          <small className="deps">
+            After: {st.dependsOn.map((d) => steps.find((x) => x.id === d)?.title).join(', ')}
+          </small>
+        )}
+        {parts.length > 0 && (
+          <table className="stack">
+            <tbody>
+              {parts.map((r, i) => (
+                <tr key={i}>
+                  <td>
+                    {r.item}
+                    <small>{r.material}</small>
+                  </td>
+                  <td>
+                    {r.estimate ? '≈ ' : ''}
+                    {r.unit === 'pcs' ? r.qty : r.qty.toFixed(2)} {r.unit}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
       <label>
         Exploded view <output>{view.explode}%</output>
         <input
@@ -313,9 +356,6 @@ function BuildPanel() {
           onChange={(e) => setView({ explode: +e.target.value })}
         />
       </label>
-      <div className="callout">
-        <b>{LAYERS[view.step - 1].name}.</b> {LAYERS[view.step - 1].note}
-      </div>
       <div className="sectionlabel">LAYERS</div>
       <div id="layertoggles">
         {LAYERS.map(({ name: n }, i) => (

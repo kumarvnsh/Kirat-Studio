@@ -1067,3 +1067,19 @@ table.stack small {
   vertical-align: middle;
   margin-top: 6px;
 }
+.deps {
+  display: block;
+  margin-top: 6px;
+  color: #8b9993;
+}
+.strip {
+  margin: 10px 0 14px;
+  font-size: 10px;
+}
+.strip svg {
+  display: block;
+  margin: 6px 0;
+}
+.callout.warn[role='button'] {
+  cursor: pointer;
+}

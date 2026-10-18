@@ -635,7 +635,7 @@ export class SignScene {
   setVisibility(s: SceneInput) {
     LAYERS.forEach((l, i) => {
       const g = this.layers.get(l.id)!,
-        shown = s.step >= i + 1 && s.layers[i] !== false;
+        shown = s.visibleLayers.has(l.id) && s.layers[i] !== false;
       g.position.z = (s.explode / 100) * i * EXPLODE_STEP;
       if (s.isolate && s.selected) {
         g.visible = l.kind === 'letter' && shown;

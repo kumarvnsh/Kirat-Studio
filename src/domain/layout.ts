@@ -3,6 +3,7 @@
 // The renderer, the BOM and the inspector all read this; none of them repeat the math.
 import { inside, perimeter } from '../artwork/contours.js';
 import { recipes, resolveParams, VINYL_THICKNESS } from './recipes.ts';
+import { assemblySteps, visibleLayers } from './assembly.ts';
 import type {
   ConstructionType,
   DesignSettings,
@@ -291,6 +292,7 @@ export function sceneInput(design: DesignState, view: ViewState) {
     ...view,
     settings: design.settings,
     layout: computeLayout(design),
+    visibleLayers: visibleLayers(assemblySteps(design), view.step),
     imageWidth: a?.imageWidth ?? 1,
     imageHeight: a?.imageHeight ?? 1,
   };

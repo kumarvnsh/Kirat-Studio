@@ -13,6 +13,7 @@ import {
 } from '../domain/project.ts';
 import { autoGroup } from '../artwork/grouping.js';
 import { checkParams } from '../domain/recipes.ts';
+import { defaultFabrication } from '../fabrication/plan.ts';
 
 export const FORMAT = 'kirat-signage-studio';
 export const VERSION = 4;
@@ -38,7 +39,29 @@ export function parseProject(text: string): ProjectFile {
   else if (raw.version === 1 || raw.version === 2) design = fromV3(fromFlatState(raw.state, raw.version));
   else throw Error('Unsupported project version ' + raw.version + '.');
   validateDesign(design);
-  return { design, fabrication: {}, traceSettings: raw.traceSettings };
+  return { design, fabrication: parseFabrication(raw.fabrication), traceSettings: raw.traceSettings };
+}
+
+// Fabrication settings: defaults for anything missing; out-of-range values rejected.
+const fabRanges: Record<string, [number, number]> = {
+  toolDiameter: [0.5, 25],
+  kerf: [0, 2],
+  minStroke: [0, 20],
+  minAngle: [0.5, 20],
+  curveSpacing: [1, 100],
+  cornerAngle: [5, 90],
+  overlap: [0, 100],
+};
+function parseFabrication(raw: any): FabricationState {
+  const d = defaultFabrication(),
+    f = { cut: { ...d.cut, ...raw?.cut }, bend: { ...d.bend, ...raw?.bend } };
+  if (f.cut.method !== 'router' && f.cut.method !== 'laser') throw Error('Invalid cutting method.');
+  for (const [k, v] of [...Object.entries(f.cut), ...Object.entries(f.bend)]) {
+    const r = fabRanges[k];
+    if (r && !(typeof v === 'number' && v >= r[0] && v <= r[1]))
+      throw Error('Invalid fabrication setting ' + k + '.');
+  }
+  return f;
 }
 
 const LETTER_KEYS = ['depth', 'gauge', 'face', 'back'] as const;

@@ -82,7 +82,7 @@ export async function openProject(text: string, note = 'Project opened.') {
   const a = p.design.artwork;
   source = a && a.origin !== 'vector' ? { image: await loadImage(a.imageData) } : null;
   setTrace({ ...(p.traceSettings ?? {}), crop: fullCrop });
-  loadDesign(p.design, note);
+  loadDesign(p.design, note, p.fabrication);
 }
 
 export function projectText() {
@@ -185,12 +185,15 @@ export function startSession() {
   const previous = readStore(AUTOSAVE);
   if (previous) writeStore(BACKUP, previous);
   let last = getState().design.present,
+    lastFab = getState().fabrication,
     timer: ReturnType<typeof setTimeout>,
     warned = false;
   subscribe(() => {
-    const d = getState().design.present;
-    if (d === last) return;
+    const d = getState().design.present,
+      f = getState().fabrication;
+    if (d === last && f === lastFab) return;
     last = d;
+    lastFab = f;
     clearTimeout(timer);
     timer = setTimeout(() => {
       if (d.artwork && !writeStore(AUTOSAVE, projectText()) && !warned) {

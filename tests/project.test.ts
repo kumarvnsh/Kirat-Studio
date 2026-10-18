@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parseProject, serialise } from '../src/storage/project.ts';
+import { defaultFabrication } from '../src/fabrication/plan.ts';
 import { defaultSettings, type DesignState } from '../src/domain/project.ts';
 
 const square = [
@@ -51,14 +52,14 @@ test('v1 prototype file migrates to v3 groups and keeps saved constructions', ()
 
 test('v3 round-trips through serialise and parse', () => {
   const { design } = parseProject(JSON.stringify(v1));
-  const again = parseProject(serialise({ design, fabrication: {} }));
+  const again = parseProject(serialise({ design, fabrication: defaultFabrication() }));
   assert.deepEqual(again.design, design);
 });
 
 test('invalid settings are rejected with a readable message', () => {
   const design: DesignState = { settings: { ...defaultSettings(), width: 100 }, artwork: null };
   assert.throws(
-    () => parseProject(serialise({ design, fabrication: {} })),
+    () => parseProject(serialise({ design, fabrication: defaultFabrication() })),
     /Board width must be between 500 and 12000/,
   );
 });
@@ -82,5 +83,5 @@ test('v3 board-wide letter dimensions move into front-lit group params', () => {
 test('out-of-range recipe params are rejected', () => {
   const { design } = parseProject(JSON.stringify(v1));
   design.artwork!.groups[0].params = { depth: 999 };
-  assert.throws(() => parseProject(serialise({ design, fabrication: {} })), /Return depth/);
+  assert.throws(() => parseProject(serialise({ design, fabrication: defaultFabrication() })), /Return depth/);
 });

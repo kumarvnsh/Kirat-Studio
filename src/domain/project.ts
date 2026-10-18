@@ -91,7 +91,7 @@ export type ViewState = {
   selected: string | null;
   selectionActive: boolean;
   isolate: boolean;
-  step: number; // assembly stage 1..7
+  step: number; // assembly step, 1..n (ALL_STEPS = complete)
   layers: boolean[];
   explode: number; // 0..100
   bend: number; // forming progress 0..100
@@ -100,10 +100,11 @@ export type ViewState = {
   dimming: number; // 0.1..1 of full LED output
   exposure: number; // camera EV offset, -2..+2
   presentation: boolean;
+  toolpaths: boolean; // overlay compensated cut paths in the 2D view
 };
 
-// Reserved for seams, bend calibration, tool settings and allowances (Milestone E).
-export type FabricationState = Record<string, never>;
+// Cutting and bending settings (see src/fabrication).
+export type { FabricationState } from '../fabrication/plan.ts';
 
 // Assembly layers, rear to front. Index = assembly step - 1.
 export const LAYERS = [
@@ -180,7 +181,7 @@ export function defaultView(): ViewState {
     selected: null,
     selectionActive: false,
     isolate: false,
-    step: LAYER_COUNT,
+    step: 99, // ALL_STEPS
     layers: Array(LAYER_COUNT).fill(true),
     explode: 0,
     bend: 100,
@@ -189,6 +190,7 @@ export function defaultView(): ViewState {
     dimming: 1,
     exposure: 0,
     presentation: false,
+    toolpaths: false,
   };
 }
 

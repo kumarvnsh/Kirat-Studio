@@ -5,6 +5,7 @@ import { loadImage } from '../artwork/import.ts';
 import { constructionNames } from '../domain/project.ts';
 import { environments, type Environment } from '../domain/lighting.ts';
 import { computeLayout, sceneInput } from '../domain/layout.ts';
+import { fabricationPlan } from '../fabrication/plan.ts';
 import { setMode, viewer } from './actions.ts';
 import { getState, say, select, setView, showAll, useApp, useDesign, useView } from './store.ts';
 
@@ -256,8 +257,10 @@ function TraceView({
   art: HTMLCanvasElement | null;
   hidden: boolean;
 }) {
-  const artwork = useDesign().artwork,
-    view = useView();
+  const design = useDesign(),
+    artwork = design.artwork,
+    view = useView(),
+    fab = useApp((s) => s.fabrication);
   const xf = useRef({ scale: 1, tx: 0, ty: 0 });
   const [size, setSize] = useState(0);
 
@@ -288,6 +291,32 @@ function TraceView({
     ctx.globalAlpha = 0.45;
     ctx.drawImage(art, tx, ty, art.width * scale, art.height * scale);
     ctx.globalAlpha = 1;
+    // Compensated tool paths (mm, y up) mapped back onto the traced artwork.
+    if (view.toolpaths) {
+      const L = computeLayout(design),
+        toPx = ([x, y]: [number, number]) => [
+          tx + (x / L.scale + L.cx) * scale,
+          ty + (L.cy - y / L.scale) * scale,
+        ];
+      ctx.setLineDash([4, 3]);
+      ctx.lineWidth = 1;
+      for (const c of fabricationPlan(design, fab).cuts) {
+        if (c.part === 'face') continue; // same outline as the back
+        ctx.strokeStyle = c.part === 'vinyl' ? '#8d7bd6' : '#e2574c';
+        for (const r of c.toolpath)
+          for (const loop of [r.outer, ...r.holes]) {
+            ctx.beginPath();
+            loop.forEach((p, i) => {
+              const [x, y] = toPx(p);
+              if (i) ctx.lineTo(x, y);
+              else ctx.moveTo(x, y);
+            });
+            ctx.closePath();
+            ctx.stroke();
+          }
+      }
+      ctx.setLineDash([]);
+    }
     for (const p of artwork.elements) {
       ctx.strokeStyle = p.id === view.selected ? '#e58c3b' : p.type === 'omit' ? '#aab3aa' : '#3d8d87';
       ctx.lineWidth = p.id === view.selected ? 2 : 1;
@@ -301,7 +330,7 @@ function TraceView({
           ctx.stroke();
         }
     }
-  }, [hidden, art, artwork, view.selected, view.environment, size]);
+  }, [hidden, art, design, fab, view.selected, view.environment, view.toolpaths, size]);
 
   return (
     <canvas

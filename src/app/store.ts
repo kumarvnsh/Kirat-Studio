@@ -8,6 +8,8 @@ import {
   type ViewState,
 } from '../domain/project.ts';
 import { defaultTrace, type TraceOptions } from '../artwork/import.ts';
+import { ALL_STEPS } from '../domain/assembly.ts';
+import { defaultFabrication } from '../fabrication/plan.ts';
 import { historyOf, record, undo as undoH, redo as redoH, type History } from '../editor/history.ts';
 
 export type AppState = {
@@ -21,7 +23,7 @@ export type AppState = {
 let state: AppState = {
   design: historyOf<DesignState>({ settings: defaultSettings(), artwork: null }),
   view: defaultView(),
-  fabrication: {},
+  fabrication: defaultFabrication(),
   trace: defaultTrace(),
   message: 'Start with the Kirat sample or upload your logo.',
 };
@@ -56,9 +58,19 @@ export function editDesign(fn: (d: DesignState) => DesignState, message?: string
   });
 }
 // Load a whole design (open file, restore autosave): fresh history, fresh view.
-export function loadDesign(design: DesignState, message: string) {
+export function loadDesign(design: DesignState, message: string, fabrication = state.fabrication) {
   const first = design.artwork?.elements[0]?.id ?? null;
-  set({ ...state, design: historyOf(design), view: { ...defaultView(), selected: first }, message });
+  set({
+    ...state,
+    design: historyOf(design),
+    fabrication,
+    view: { ...defaultView(), selected: first },
+    message,
+  });
+}
+// Fabrication settings: saved with the project, not part of the design's undo history.
+export function setFabrication(fn: (f: FabricationState) => FabricationState) {
+  set({ ...state, fabrication: fn(state.fabrication) });
 }
 export const undo = () => set({ ...state, design: undoH(state.design) });
 export const redo = () => set({ ...state, design: redoH(state.design) });
@@ -75,7 +87,7 @@ export function showAll(
   setView({
     isolate: false,
     mode: '3d',
-    step: LAYER_COUNT,
+    step: ALL_STEPS,
     layers: Array(LAYER_COUNT).fill(true),
     explode: 0,
     bend: 100,
@@ -90,7 +102,7 @@ export function isolate(id: string | null) {
     selected: el.id,
     mode: '3d',
     isolate: true,
-    step: LAYER_COUNT,
+    step: ALL_STEPS,
     layers: Array(LAYER_COUNT).fill(true),
     selectionActive: true,
   });
