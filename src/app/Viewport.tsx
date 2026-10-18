@@ -3,6 +3,7 @@ import { SignScene } from '../scene/scene.ts';
 import { inside } from '../artwork/contours.js';
 import { loadImage } from '../artwork/import.ts';
 import { constructionNames } from '../domain/project.ts';
+import { environments, type Environment } from '../domain/lighting.ts';
 import { computeLayout, sceneInput } from '../domain/layout.ts';
 import { setMode, viewer } from './actions.ts';
 import { getState, say, select, setView, showAll, useApp, useDesign, useView } from './store.ts';
@@ -50,7 +51,12 @@ export function Viewport({ traceCanvas }: { traceCanvas: RefObject<HTMLCanvasEle
     const v = viewer.current;
     if (!v || !ready) return;
     v.build(sceneInput(design, getState().view), art!.canvas);
-  }, [design, ready, art, view.night, view.lights, view.brightness, view.mode, view.bend, bendTarget]);
+  }, [design, ready, art, view.environment, view.lights, view.dimming, view.mode, view.bend, bendTarget]);
+
+  // Exposure is a camera setting: no rebuild.
+  useEffect(() => {
+    if (ready && viewer.current?.state) viewer.current.setEnvironment(sceneInput(design, view));
+  }, [ready, view.exposure]);
 
   // Cheap visibility pass: stage, layers, explode, isolation, selection.
   useEffect(() => {
@@ -114,7 +120,15 @@ export function Viewport({ traceCanvas }: { traceCanvas: RefObject<HTMLCanvasEle
           >
             {view.lights ? '● Lights on' : '○ Lights off'}
           </button>
-          <button onClick={() => setView({ night: !view.night })}>{view.night ? '☀ Day' : '☾ Night'}</button>
+          {(Object.keys(environments) as Environment[]).map((env) => (
+            <button
+              key={env}
+              className={view.environment === env ? 'envon' : ''}
+              onClick={() => setView({ environment: env })}
+            >
+              {environments[env].label}
+            </button>
+          ))}
         </div>
       </div>
       <div id="viewport">
@@ -132,9 +146,7 @@ export function Viewport({ traceCanvas }: { traceCanvas: RefObject<HTMLCanvasEle
               ? 'ARTWORK / TRACED CONTOURS'
               : view.mode === 'bend'
                 ? 'GEOMETRIC FORMING / NO PROCESS COMPENSATION'
-                : view.night
-                  ? 'NIGHT STUDIO / ILLUMINATION PREVIEW'
-                  : 'DAY STUDIO / MATERIAL PREVIEW'}
+                : `${environments[view.environment].label.toUpperCase()} / PRESENTATION PREVIEW (NOT CALIBRATED)`}
           </span>
           <b>{artwork?.approved ? 'ARTWORK REVIEWED / CONCEPT MODEL' : 'ARTWORK REVIEW PENDING'}</b>
         </div>
@@ -267,7 +279,7 @@ function TraceView({
     canvas.height = H * ratio;
     const ctx = canvas.getContext('2d')!;
     ctx.scale(ratio, ratio);
-    ctx.fillStyle = view.night ? '#12232c' : '#e4e9e0';
+    ctx.fillStyle = view.environment === 'day' ? '#e4e9e0' : '#12232c';
     ctx.fillRect(0, 0, W, H);
     const scale = Math.min((W - 60) / art.width, (H - 120) / art.height),
       tx = (W - art.width * scale) / 2,
@@ -289,7 +301,7 @@ function TraceView({
           ctx.stroke();
         }
     }
-  }, [hidden, art, artwork, view.selected, view.night, size]);
+  }, [hidden, art, artwork, view.selected, view.environment, size]);
 
   return (
     <canvas

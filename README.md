@@ -23,11 +23,12 @@ Requires Node 20+.
 | `src/domain/recipes.ts` | Construction recipes: parameters (mm, ranges, defaults) and materials per construction type |
 | `src/domain/layout.ts` | Design → dimensioned parts: board stack, frame members, per-letter stacks, LED and standoff positions; `sceneInput()` |
 | `src/domain/bom.ts` | Preliminary bill of materials from the layout |
+| `src/domain/lighting.ts` | Lighting model: environments (day/dusk/night), emission, exposure, LED colour temperature |
 | `src/app/` | React UI (`App`, `ToolsPanel`, `Viewport`, `Inspector`), store (`store.ts`), cross-panel actions (`actions.ts`), styles |
 | `src/artwork/` | SVG vector import (`svg.ts`), raster tracing (`contours.js`, `import.ts`), dot attachment and grouping (`grouping.js`) |
 | `src/editor/history.ts` | Immutable undo/redo over designs |
 | `src/storage/project.ts` | Project file format v4, v1–v3 migration, validation, browser autosave |
-| `src/scene/scene.ts` | Three.js display of the layout; converts mm → m, owns lighting and interaction only |
+| `src/scene/scene.ts` | Three.js display of the layout (mm → m); HDR pipeline via pmndrs/postprocessing: exposure → bloom → AgX tone mapping; PBR finishes; stills |
 | `public/` | Static assets served at `/` (Kirat sample logo, not yet added) |
 | `tests/` | `node --test` checks (`.js` and `.ts`; Node 22 strips types natively) |
 | `reference/prototype/` | Byte-exact copy of the original ChatGPT-hosted prototype (v02). Do not edit. |
@@ -54,6 +55,15 @@ Milestones A and B done (Kirat group naming waits for `public/kirat-reference.pn
 - Per-element stack readout, board stack table, power summary and preliminary BOM; 10 assembly layers.
 
 Artwork import: **SVG is imported as vectors** (three's `SVGLoader`): exact curves flattened to 0.1 unit tolerance on a 1400-unit canvas, holes, transforms and `<use>` references preserved; top-level `<g>` groups (Inkscape label, `data-name` or id) become artwork groups; stroke-only paths are ignored. PNG/JPG/WebP are still traced from pixels.
+
+Milestone D (customer-ready visuals) done for presentation level:
+
+- Independent lighting controls: time of day (Day / Dusk / Night), sign power, dimming, LED colour temperature (a design setting, undoable), camera exposure (EV).
+- Emission never depends on time of day. Daylight is modelled as much brighter than an LED face and the camera exposes for it, so lit faces read as lit-but-subtle by day and glow at night.
+- HDR rendering with pmndrs/postprocessing: exposure, then bloom with a luminance threshold above 1 (only emissive parts bloom: faces, halo light, LED lenses), then AgX tone mapping so saturated faces keep their colour.
+- PBR finishes: clear-coated ACP, zinc GI, primed MS frame, aluminium returns, stainless halo faces, glossy cast acrylic, matte vinyl.
+- Presentation sheet export: day and night stills at 2400 px framed from the current viewing direction, title block, construction per group, LED colour, disclaimer.
+- Not done: a *calibrated* preview compared against photographs of a real sample (needs measurements), path-traced stills.
 
 Known limits, deliberately left for later milestones: module/PSU ratings are placeholders until the verified atlas (F); no ACP seam or fixing pattern, cable holes in frame members, or wiring diagram (E); the face-retention method beyond trim cap (e.g. screws, inset) is not modelled.
 

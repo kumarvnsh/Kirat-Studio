@@ -10,6 +10,7 @@ import {
 import { readUpload, textArtworkURL } from '../artwork/import.ts';
 import { boardStack, computeLayout, MODULE_W, PSU_LOADING, PSU_W } from '../domain/layout.ts';
 import { bom } from '../domain/bom.ts';
+import { kelvinToHex, LED_TEMPS } from '../domain/lighting.ts';
 import { hasBackup, importImage, importSvg, restoreBackup, retrace, setMode } from './actions.ts';
 import { editDesign, say, setTrace, setView, showAll, useApp, useDesign, useView } from './store.ts';
 
@@ -272,20 +273,7 @@ function BuildPanel() {
     <section className="panel active">
       <div className="eyebrow">INSPECT THE ASSEMBLY</div>
       <h2>Piece by piece.</h2>
-      <label>
-        Illumination preview <output>{Math.round(view.brightness * 100)}%</output>
-        <input
-          type="range"
-          min={0.3}
-          max={2}
-          step={0.05}
-          value={view.brightness}
-          onChange={(e) => setView({ brightness: +e.target.value })}
-        />
-      </label>
-      <p className="muted">
-        Relative visual brightness. This does not change module wattage or calculate light output.
-      </p>
+      <LightingControls />
       <label>
         Assembly stage{' '}
         <output>
@@ -381,6 +369,69 @@ function StackTable({ settings }: { settings: DesignSettings }) {
         </tr>
       </tbody>
     </table>
+  );
+}
+
+// Independent controls: LED colour is part of the design (undoable); dimming and exposure are view only.
+function LightingControls() {
+  const view = useView(),
+    ledTemp = useDesign().settings.ledTemp;
+  return (
+    <>
+      <div className="sectionlabel">LIGHTING</div>
+      <label>
+        LED colour
+        <select
+          value={ledTemp}
+          onChange={(e) =>
+            editDesign(
+              (d) => ({ ...d, settings: { ...d.settings, ledTemp: +e.target.value } }),
+              `LED colour set to ${e.target.value} K.`,
+            )
+          }
+        >
+          {(LED_TEMPS as readonly number[]).includes(ledTemp) ? null : (
+            <option value={ledTemp}>{ledTemp} K</option>
+          )}
+          {LED_TEMPS.map((k) => (
+            <option key={k} value={k}>
+              {k} K {k <= 3000 ? 'warm white' : k <= 4000 ? 'neutral white' : 'cool white'}
+            </option>
+          ))}
+        </select>
+        <i className="swatch" style={{ background: kelvinToHex(ledTemp) }} />
+      </label>
+      <label>
+        Dimming <output>{Math.round(view.dimming * 100)}%</output>
+        <input
+          type="range"
+          min={0.1}
+          max={1}
+          step={0.05}
+          value={view.dimming}
+          onChange={(e) => setView({ dimming: +e.target.value })}
+        />
+      </label>
+      <label>
+        Camera exposure{' '}
+        <output>
+          {view.exposure > 0 ? '+' : ''}
+          {view.exposure} EV
+        </output>
+        <input
+          type="range"
+          min={-2}
+          max={2}
+          step={0.25}
+          value={view.exposure}
+          onChange={(e) => setView({ exposure: +e.target.value })}
+        />
+      </label>
+      <p className="muted">
+        Time of day and sign power are above the scene. Emission doesn't change with time of day; the camera
+        exposes for the surroundings, as a photo would. Presentation preview, not calibrated against photos.
+      </p>
+    </>
   );
 }
 

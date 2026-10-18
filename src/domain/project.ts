@@ -4,6 +4,8 @@
 //   FabricationState — how the workshop makes it. Saved separately from the design.
 // Dimensions are millimetres. Conversion to metres happens only in src/scene.
 
+import type { Environment } from './lighting.ts';
+
 export type ConstructionType =
   | 'front'
   | 'halo'
@@ -71,6 +73,7 @@ export const numericSettings = {
   frame: { label: 'Frame section', min: 20, max: 100, step: 1, value: 40 },
   framewall: { label: 'Frame wall', min: 1, max: 5, step: 0.5, value: 2 },
   backing: { label: 'Front backing sheet (0 = none)', min: 0, max: 6, step: 0.5, value: 0 },
+  ledTemp: { label: 'LED colour temperature', min: 2000, max: 10000, step: 100, value: 6500, unit: 'K' },
 } as const;
 export type NumericKey = keyof typeof numericSettings;
 
@@ -92,9 +95,10 @@ export type ViewState = {
   layers: boolean[];
   explode: number; // 0..100
   bend: number; // forming progress 0..100
-  night: boolean;
-  lights: boolean;
-  brightness: number;
+  environment: Environment; // time of day
+  lights: boolean; // sign power
+  dimming: number; // 0.1..1 of full LED output
+  exposure: number; // camera EV offset, -2..+2
   presentation: boolean;
 };
 
@@ -180,9 +184,10 @@ export function defaultView(): ViewState {
     layers: Array(LAYER_COUNT).fill(true),
     explode: 0,
     bend: 100,
-    night: true,
+    environment: 'night',
     lights: true,
-    brightness: 1,
+    dimming: 1,
+    exposure: 0,
     presentation: false,
   };
 }
@@ -192,7 +197,7 @@ export function checkSettings(s: DesignSettings): string | null {
   for (const [k, r] of Object.entries(numericSettings)) {
     const v = s[k as NumericKey];
     if (!Number.isFinite(v) || v < r.min || v > r.max)
-      return `${r.label} must be between ${r.min} and ${r.max} mm.`;
+      return `${r.label} must be between ${r.min} and ${r.max} ${'unit' in r ? r.unit : 'mm'}.`;
   }
   if (s.framewall * 2 >= s.frame) return 'Frame wall must be less than half the frame section.';
   return null;

@@ -4,10 +4,16 @@ import * as T from 'three';
 import ClipperLib from 'clipper-lib';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import {
+  BloomEffect,
+  Effect,
+  EffectComposer,
+  EffectPass,
+  RenderPass,
+  ToneMappingEffect,
+  ToneMappingMode,
+} from 'postprocessing';
+import { BLOOM_THRESHOLD, cameraExposure, emission, environments, kelvinToHex } from '../domain/lighting.ts';
 import { bentPath } from '../artwork/contours.js';
 import { LAYERS, type LayerId, type Point, type Region } from '../domain/project.ts';
 import { LED_SIZE, type ElementLayout, type LetterPart, type SceneInput } from '../domain/layout.ts';
@@ -15,6 +21,20 @@ import { frontLit, haloLit, recipes } from '../domain/recipes.ts';
 import { PSU_SIZE } from '../domain/layout.ts';
 
 const M = 0.001;
+
+// Camera exposure, applied in HDR before bloom and tone mapping.
+class ExposureEffect extends Effect {
+  constructor() {
+    super(
+      'Exposure',
+      'uniform float exposure; void mainImage(const in vec4 c, const in vec2 uv, out vec4 o) { o = vec4(c.rgb * exposure, c.a); }',
+      { uniforms: new Map([['exposure', new T.Uniform(1)]]) },
+    );
+  }
+  set exposure(v: number) {
+    this.uniforms.get('exposure')!.value = v;
+  }
+}
 const EXPLODE_STEP = 0.12; // metres between layers at 100% explode
 const toM = (r: Region): Region => ({
   outer: r.outer.map(([x, y]) => [x * M, y * M]),
@@ -129,7 +149,8 @@ export class SignScene {
   sun = new T.DirectionalLight(0xfff0d6, 3);
   fill = new T.DirectionalLight(0xd6ecff, 1.5);
   composer: EffectComposer;
-  bloom: UnrealBloomPass;
+  bloom: BloomEffect;
+  exposure = new ExposureEffect();
   group = new T.Group();
   layers = new Map<LayerId, T.Group>();
   state: SceneInput | null = null;
@@ -137,15 +158,17 @@ export class SignScene {
   outline: T.LineSegments | null = null;
   forming: T.Group | null = null;
   worldParts: { id: string; regions: Region[] }[] = [];
+  wall: T.Mesh | null = null;
 
   constructor(host: HTMLElement, onSelect: (id: string) => void) {
     this.host = host;
     this.onSelect = onSelect;
-    this.renderer = new T.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+    // Antialiasing comes from the composer's multisampling; tone mapping from the effect chain.
+    this.renderer = new T.WebGLRenderer({ antialias: false, preserveDrawingBuffer: true });
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = T.PCFSoftShadowMap;
-    this.renderer.toneMapping = T.ACESFilmicToneMapping;
+    this.renderer.toneMapping = T.NoToneMapping;
     host.append(this.renderer.domElement);
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
@@ -167,16 +190,21 @@ export class SignScene {
     this.scene.environment = pmrem.fromScene(env, 0.04).texture;
     env.dispose();
     pmrem.dispose();
-    this.composer = new EffectComposer(this.renderer);
+    // HDR pipeline. Bloom only picks up radiance above BLOOM_THRESHOLD, i.e. emissive parts.
+    this.composer = new EffectComposer(this.renderer, { frameBufferType: T.HalfFloatType, multisampling: 4 });
     this.composer.addPass(new RenderPass(this.scene, this.camera));
-    this.bloom = new UnrealBloomPass(
-      new T.Vector2(host.clientWidth || 800, host.clientHeight || 600),
-      0.75,
-      0.38,
-      0.85,
+    this.bloom = new BloomEffect({
+      luminanceThreshold: BLOOM_THRESHOLD,
+      luminanceSmoothing: 0.25,
+      mipmapBlur: true,
+      intensity: 0.8,
+      radius: 0.55,
+    });
+    // Exposure first, in its own pass: bloom samples the pass input, not earlier effects in the same pass.
+    this.composer.addPass(new EffectPass(this.camera, this.exposure));
+    this.composer.addPass(
+      new EffectPass(this.camera, this.bloom, new ToneMappingEffect({ mode: ToneMappingMode.AGX })),
     );
-    this.composer.addPass(this.bloom);
-    this.composer.addPass(new OutputPass());
     this.scene.add(this.group);
     const ray = new T.Raycaster();
     let down: [number, number] | null = null;
@@ -234,6 +262,35 @@ export class SignScene {
     return new T.MeshStandardMaterial({ color, metalness, roughness, side: T.FrontSide });
   }
 
+  // Physically based finishes. Values are presentation estimates, not measured BRDFs.
+  finish(
+    kind: 'acp' | 'gi' | 'frame' | 'aluminium' | 'stainless' | 'acrylic' | 'trim' | 'vinyl' | 'paint',
+    color?: T.ColorRepresentation,
+  ) {
+    const P = (o: T.MeshPhysicalMaterialParameters) =>
+      new T.MeshPhysicalMaterial({ side: T.FrontSide, ...o });
+    switch (kind) {
+      case 'acp': // PVDF-coated panel: painted, light clearcoat
+        return P({ color, metalness: 0.05, roughness: 0.42, clearcoat: 0.55, clearcoatRoughness: 0.28 });
+      case 'gi':
+        return P({ color: '#a9b2b5', metalness: 1, roughness: 0.48 });
+      case 'frame': // primed MS
+        return P({ color: '#3d4347', metalness: 0.35, roughness: 0.6 });
+      case 'aluminium':
+        return P({ color: color ?? '#c5ccd0', metalness: 1, roughness: 0.32 });
+      case 'stainless':
+        return P({ color: '#cdd3d6', metalness: 1, roughness: 0.24 });
+      case 'acrylic': // glossy cast acrylic surface
+        return P({ color, metalness: 0, roughness: 0.22, clearcoat: 1, clearcoatRoughness: 0.04 });
+      case 'trim':
+        return P({ color: '#2f3336', metalness: 0, roughness: 0.5 });
+      case 'vinyl':
+        return P({ color, metalness: 0, roughness: 0.62 });
+      case 'paint':
+        return P({ color, metalness: 0, roughness: 0.95 });
+    }
+  }
+
   build(s: SceneInput, artCanvas: HTMLCanvasElement | null) {
     this.state = s;
     this.clear();
@@ -268,9 +325,9 @@ export class SignScene {
 
     // Board: sheets as boxes, frame as hollow tubes.
     const sheetColour: Partial<Record<LayerId, T.Material>> = {
-      gi: this.material('#88989c', 0.75, 0.5),
-      backing: this.material('#9aa6a8', 0.6, 0.45),
-      acp: this.material(st.boardcolor, 0.18, 0.48),
+      gi: this.finish('gi'),
+      backing: this.finish('aluminium', '#b4bbbe'),
+      acp: this.finish('acp', st.boardcolor),
     };
     for (const b of L.board) {
       if (b.layer === 'frame') continue;
@@ -283,7 +340,7 @@ export class SignScene {
     }
     const F = st.frame * M,
       inner = F / 2 - st.framewall * M,
-      steel = this.material('#606d71', 0.85, 0.3),
+      steel = this.finish('frame'),
       tubeShape = shapeFromRegion({
         outer: [
           [-F / 2, -F / 2],
@@ -310,11 +367,12 @@ export class SignScene {
     }
     const wall = new T.Mesh(
       new T.PlaneGeometry(Math.max(W * 2, 10), Math.max(H * 3, 5)),
-      this.material(s.night ? '#17232e' : '#bcc7ca', 0, 0.98),
+      this.finish('paint', environments[s.environment].wall),
     );
     wall.position.z = L.board[0].z0 * M - 0.1;
     wall.receiveShadow = true;
     this.group.add(wall);
+    this.wall = wall;
 
     if (artCanvas) {
       this.texture = new T.CanvasTexture(artCanvas);
@@ -331,7 +389,8 @@ export class SignScene {
     }
 
     // Soft spill from lit letters onto the fascia: one light per fifth of the board width.
-    if (s.night && lit && s.mode !== 'bend') {
+    // Same intensity day or night; by day the sun simply swamps it.
+    if (lit && s.mode !== 'bend') {
       const bins = new Map<number, ElementLayout>();
       for (const e of L.elements.filter((e) => recipes[e.type].lit)) {
         const x = (e.bounds[0] + e.bounds[2]) / 2,
@@ -340,7 +399,12 @@ export class SignScene {
       }
       for (const e of bins.values()) {
         const top = Math.max(...e.parts.map((p) => p.z1)) * M,
-          light = new T.PointLight('#ffdcac', 0.4 * s.brightness, Math.max(0.7, H * 1.3), 2);
+          light = new T.PointLight(
+            kelvinToHex(st.ledTemp),
+            0.3 * emission(true, s.dimming),
+            Math.max(0.7, H * 1.3),
+            2,
+          );
         light.position.set(
           ((e.bounds[0] + e.bounds[2]) / 2) * M,
           ((e.bounds[1] + e.bounds[3]) / 2) * M,
@@ -350,7 +414,7 @@ export class SignScene {
       }
     }
     this.buildPower(s);
-    this.setNight(s.night);
+    this.setEnvironment(s);
     this.setVisibility(s);
     if (s.mode === 'bend') this.buildBend(s);
     this.draw();
@@ -392,12 +456,15 @@ export class SignScene {
       }
       return mesh(g, mat, p.layer, z0, e.id);
     };
+    const ledColour = kelvinToHex(st.ledTemp),
+      glow = emission(lit, s.dimming);
     const faceMat = () => {
-      const m = this.material(art ? '#ffffff' : st.facecolor, 0, 0.32);
+      const m = this.finish('acrylic', art ? '#ffffff' : st.facecolor) as T.MeshPhysicalMaterial;
       if (art) m.map = this.texture;
       if (frontLit(e.type) && lit) {
-        m.emissive.set(art ? '#ffffff' : st.facecolor);
-        m.emissiveIntensity = s.night ? 3.8 * s.brightness : 0.025;
+        // Light through the face = LED colour × face colour (artwork texture or uniform colour).
+        m.emissive.set(ledColour).multiply(new T.Color(art ? '#ffffff' : st.facecolor));
+        m.emissiveIntensity = glow;
         if (art) m.emissiveMap = this.texture;
       }
       return m;
@@ -426,10 +493,15 @@ export class SignScene {
         ? new T.MeshStandardMaterial({ color: '#dfe8ea', roughness: 0.1, transparent: true, opacity: 0.45 })
         : this.material('#75878c', 0.05, 0.8);
       extrude(mat, false);
-      if (haloLit(e.type) && s.night && lit) this.haloGlow(regions, L.letterBase * M + 0.0001, e.id, mesh);
+      if (haloLit(e.type) && lit)
+        this.haloGlow(regions, L.letterBase * M + 0.0001, e.id, mesh, ledColour, glow);
     } else if (p.kind === 'leds') {
       const body = this.material('#e7eee4', 0, 0.4),
         lens = this.material('#fff5cc', 0, 0.2);
+      if (lit) {
+        lens.emissive.set(ledColour);
+        lens.emissiveIntensity = glow * 1.5;
+      }
       for (const [x, y] of e.leds) {
         mesh(
           new T.BoxGeometry(LED_SIZE.w * M, LED_SIZE.h * M, LED_SIZE.d * M),
@@ -445,23 +517,18 @@ export class SignScene {
     } else if (p.kind === 'returns') {
       // Full acrylic letters glow through their sides; metal returns stay dark.
       if (e.type === 'fullacrylic') {
-        const m = new T.MeshStandardMaterial({
-          color: st.facecolor,
-          roughness: 0.2,
-          transparent: true,
-          opacity: 0.85,
-        });
+        const m = this.finish('acrylic', st.facecolor) as T.MeshPhysicalMaterial;
         if (lit) {
-          m.emissive.set(st.facecolor);
-          m.emissiveIntensity = s.night ? 1.6 * s.brightness : 0.02;
+          m.emissive.set(ledColour).multiply(new T.Color(st.facecolor));
+          m.emissiveIntensity = glow * 0.6; // sides pass less light than the face
         }
         ring(e.params.gauge * M, m);
-      } else ring(e.params.gauge * M, this.material('#aab9bf', 0.92, 0.25));
-    } else if (p.kind === 'trim')
-      ring((2 * e.params.trimcap + e.params.gauge) * M, this.material('#3a3f42', 0.1, 0.55));
+      } else ring(e.params.gauge * M, this.finish('aluminium'));
+    } else if (p.kind === 'trim') ring((2 * e.params.trimcap + e.params.gauge) * M, this.finish('trim'));
     else if (p.kind === 'face')
-      extrude(e.type === 'halo' ? this.material('#bdc8c9', 0.9, 0.25) : faceMat(), e.type !== 'halo');
-    else if (e.type === 'metal') extrude(this.material('#b8c8cf', 0.95, 0.22), false);
+      extrude(e.type === 'halo' ? this.finish('stainless') : faceMat(), e.type !== 'halo');
+    else if (e.type === 'metal') extrude(this.finish('stainless'), false);
+    else if (e.type === 'vinyl') extrude(this.finish('vinyl', st.facecolor), false);
     else extrude(faceMat(), true);
   }
 
@@ -493,7 +560,15 @@ export class SignScene {
   }
 
   // Light pool on the fascia behind a halo letter.
-  private haloGlow(regions: Region[], z: number, id: string, mesh: (...a: any[]) => T.Mesh) {
+  // Drawn white and tinted by the material, which carries HDR intensity so bloom picks it up.
+  private haloGlow(
+    regions: Region[],
+    z: number,
+    id: string,
+    mesh: (...a: any[]) => T.Mesh,
+    colour: string,
+    intensity: number,
+  ) {
     for (const r of regions) {
       const xs = r.outer.map((v) => v[0]),
         ys = r.outer.map((v) => v[1]),
@@ -504,7 +579,7 @@ export class SignScene {
       c.width = 256;
       c.height = Math.max(32, Math.round((256 * height) / width));
       const ctx = c.getContext('2d')!;
-      ctx.fillStyle = ctx.shadowColor = '#fff1b8';
+      ctx.fillStyle = ctx.shadowColor = '#ffffff';
       ctx.shadowBlur = 15;
       ctx.beginPath();
       const path = (loop: Point[]) =>
@@ -527,10 +602,10 @@ export class SignScene {
         new T.PlaneGeometry(width, height),
         new T.MeshBasicMaterial({
           map: tex,
+          color: new T.Color(colour).multiplyScalar(intensity * 0.6),
           transparent: true,
-          opacity: 0.8,
+          opacity: 0.85,
           depthWrite: false,
-          toneMapped: false,
         }),
         'mounting',
         z,
@@ -541,17 +616,19 @@ export class SignScene {
     }
   }
 
-  setNight(n: boolean) {
-    this.scene.background = new T.Color(n ? '#101925' : '#d1d9d9');
-    this.scene.environmentIntensity = n ? 0.045 : 0.65;
-    this.hemi.intensity = n ? 0.13 : 0.85;
-    this.sun.intensity = n ? 0.1 : 2.15;
-    this.fill.intensity = n ? 0.12 : 0.8;
-    this.renderer.toneMappingExposure = 1.05;
-    this.bloom.enabled = n && this.state?.lights !== false && this.state?.mode !== 'bend';
-    this.bloom.strength = 0.65 * (this.state?.brightness ?? 1);
-    this.bloom.radius = 0.4;
-    this.bloom.threshold = 0.8;
+  // Environment (time of day) and camera exposure. Never touches emission.
+  setEnvironment(s: SceneInput) {
+    const e = environments[s.environment];
+    this.scene.background = new T.Color(e.background);
+    this.scene.environmentIntensity = e.ambient;
+    this.hemi.intensity = e.hemi;
+    this.sun.intensity = e.sun;
+    this.sun.color.set(e.sunColor);
+    this.sun.position.set(...e.sunPosition);
+    this.fill.intensity = e.fill;
+    this.exposure.exposure = cameraExposure(s.environment, s.exposure);
+    (this.wall?.material as T.MeshPhysicalMaterial | undefined)?.color.set(e.wall);
+    this.bloom.blendMode.opacity.value = s.mode === 'bend' ? 0 : 1;
     this.draw();
   }
 
@@ -684,6 +761,39 @@ export class SignScene {
     this.camera.lookAt(center);
     this.controls.update();
     this.draw();
+  }
+
+  // High-resolution still in a given environment: framed for the still's aspect from the current
+  // viewing direction, no selection outline. Restores camera, size, environment and highlight afterwards.
+  renderStill(width: number, height: number, environment: SceneInput['environment']): string {
+    const s = this.state!,
+      size = this.renderer.getSize(new T.Vector2()),
+      ratio = this.renderer.getPixelRatio();
+    this.highlight(null);
+    this.renderer.setPixelRatio(1);
+    this.renderer.setSize(width, height, false);
+    this.composer.setSize(width, height);
+    const pos = this.camera.position.clone(),
+      target = this.controls.target.clone();
+    this.camera.aspect = width / height;
+    this.camera.updateProjectionMatrix();
+    // Keep the user's viewing direction, but frame the whole sign tightly for this aspect.
+    const dir = pos.clone().sub(target).normalize(),
+      need = Math.max((s.settings.width * M) / this.camera.aspect, s.settings.height * M),
+      dist = (need / (2 * Math.tan((this.camera.fov * Math.PI) / 360))) * 1.12 + 0.1;
+    this.camera.position.copy(target).addScaledVector(dir, dist);
+    this.camera.lookAt(target);
+    this.setEnvironment({ ...s, environment });
+    const url = this.renderer.domElement.toDataURL('image/png');
+    this.camera.position.copy(pos);
+    this.controls.target.copy(target);
+    this.camera.lookAt(target);
+    this.renderer.setPixelRatio(ratio);
+    this.setEnvironment(s);
+    this.highlight(s.selected);
+    this.renderer.setSize(size.x, size.y, false);
+    this.resize();
+    return url;
   }
 
   export() {

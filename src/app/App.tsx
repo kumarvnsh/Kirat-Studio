@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { exportView, openProject, saveProject } from './actions.ts';
+import { exportPresentation, exportView, openProject, saveProject } from './actions.ts';
 import { getState, redo, setView, showAll, undo, useApp, useView, say } from './store.ts';
 import { ToolsPanel } from './ToolsPanel.tsx';
 import { Viewport } from './Viewport.tsx';
@@ -13,9 +13,9 @@ export function App() {
 
   // CSS themes hang off body classes.
   useEffect(() => {
-    document.body.classList.toggle('nightmode', view.night);
+    document.body.classList.toggle('nightmode', view.environment !== 'day');
     document.body.classList.toggle('presentation', view.presentation);
-  }, [view.night, view.presentation]);
+  }, [view.environment, view.presentation]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -87,6 +87,9 @@ export function App() {
           </label>
           <button id="present" onClick={togglePresentation}>
             {view.presentation ? 'Exit presentation' : 'Presentation'}
+          </button>
+          <button onClick={exportPresentation} title="Day and night views with construction summary">
+            Presentation sheet ↓
           </button>
           <button className="accent" onClick={() => exportView(traceCanvas.current)}>
             Export view ↗

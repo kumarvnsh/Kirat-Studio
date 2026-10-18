@@ -1049,3 +1049,21 @@ table.stack small {
   border-color: #e6c9a0;
   color: #8a5a22;
 }
+.lightingbuttons .envon {
+  background: #dde6df;
+  border-color: #b9cbbd;
+}
+.nightmode .lightingbuttons .envon {
+  background: #2b3a48;
+  border-color: #56708a;
+  color: #e6eef5;
+}
+.swatch {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid #0002;
+  vertical-align: middle;
+  margin-top: 6px;
+}

@@ -5,6 +5,9 @@ import type { Artwork } from '../domain/project.ts';
 import { constructionNames, type ConstructionType, type ViewMode } from '../domain/project.ts';
 import { AUTOSAVE, BACKUP, parseProject, readStore, serialise, writeStore } from '../storage/project.ts';
 import { applyGroupType } from '../artwork/grouping.js';
+import { computeLayout } from '../domain/layout.ts';
+import { recipes } from '../domain/recipes.ts';
+import { kelvinToHex } from '../domain/lighting.ts';
 import { editDesign, getState, loadDesign, say, setTrace, setView, subscribe } from './store.ts';
 import type { SignScene } from '../scene/scene.ts';
 
@@ -206,4 +209,78 @@ export function restoreBackup() {
   const text = readStore(BACKUP);
   if (text && confirm('Replace the current design with the previous session backup?'))
     openProject(text, 'Previous session restored. Undo history starts here.').catch(reportError);
+}
+
+// Customer presentation sheet: day and night stills from the current camera, title block and
+// a construction summary. Presentation lighting, labelled as such.
+export async function exportPresentation() {
+  const v = viewer.current,
+    { design, view } = getState();
+  const d = design.present,
+    a = d.artwork;
+  if (!v || !a) return say('Load artwork and open the 3D view to export a presentation.');
+  if (view.mode !== '3d') return say('Switch to 3D assembly to export a presentation.');
+  say('Rendering day and night views…');
+  await new Promise((r) => setTimeout(r, 30));
+  const W = 2400,
+    shotH = 1050,
+    head = 150,
+    foot = 260;
+  const shots = (['day', 'night'] as const).map((env) => ({ env, url: v.renderStill(W, shotH, env) }));
+  const images = await Promise.all(shots.map((s) => loadImage(s.url)));
+  const c = document.createElement('canvas');
+  c.width = W;
+  c.height = head + shotH * 2 + foot;
+  const ctx = c.getContext('2d')!;
+  ctx.fillStyle = '#f4f4ee';
+  ctx.fillRect(0, 0, c.width, c.height);
+  ctx.fillStyle = '#1d3440';
+  ctx.font = '600 54px Georgia, serif';
+  ctx.fillText('Kirat Creations — sign concept', 60, 92);
+  ctx.font = '26px Arial';
+  ctx.fillStyle = '#5e6f74';
+  const s = d.settings;
+  ctx.fillText(
+    `${s.width} × ${s.height} mm board · LED ${s.ledTemp} K · ${new Date().toLocaleDateString()}`,
+    60,
+    132,
+  );
+  images.forEach((img, i) => {
+    const y = head + i * shotH;
+    ctx.drawImage(img, 0, y, W, shotH);
+    ctx.fillStyle = 'rgba(20,30,38,.72)';
+    ctx.fillRect(40, y + 30, 170, 54);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '600 28px Arial';
+    ctx.fillText(shots[i].env === 'day' ? 'DAY' : 'NIGHT', 62, y + 67);
+  });
+  // Construction summary per group.
+  const L = computeLayout(d),
+    y0 = head + shotH * 2 + 56;
+  ctx.font = '600 26px Arial';
+  ctx.fillStyle = '#1d3440';
+  ctx.fillText('Construction', 60, y0);
+  ctx.font = '24px Arial';
+  ctx.fillStyle = '#3e5157';
+  a.groups.forEach((g, i) => {
+    const els = L.elements.filter((e) => e.group === g.id && e.type === g.type),
+      proj = els.length ? Math.max(...els.flatMap((e) => e.parts.map((p) => p.z1 - e.base))) : 0;
+    ctx.fillText(
+      `${g.name}: ${recipes[g.type].name}${proj >= 1 ? ` · ${Math.round(proj)} mm projection` : proj > 0 ? ' · surface applied' : ''}`,
+      60 + (i % 2) * 1100,
+      y0 + 44 + Math.floor(i / 2) * 36,
+    );
+  });
+  ctx.fillStyle = kelvinToHex(s.ledTemp);
+  ctx.fillRect(W - 360, y0 - 24, 26, 26);
+  ctx.fillStyle = '#5e6f74';
+  ctx.font = '22px Arial';
+  ctx.fillText(`LED colour ${s.ledTemp} K`, W - 320, y0);
+  ctx.fillText(
+    'Concept visualisation. Presentation lighting, not calibrated against photographs. Not for fabrication.',
+    60,
+    c.height - 36,
+  );
+  download(c.toDataURL('image/png'), 'kirat-presentation.png');
+  say('Presentation sheet exported: day and night views from the current camera.');
 }

@@ -32,7 +32,8 @@ export function parseProject(text: string): ProjectFile {
   const raw = JSON.parse(text);
   if (raw?.format !== FORMAT) throw Error('Not a Kirat Studio project.');
   let design: DesignState;
-  if (raw.version === 4) design = raw.design;
+  if (raw.version === 4)
+    design = raw.design && { ...raw.design, settings: { ...defaultSettings(), ...raw.design.settings } };
   else if (raw.version === 3) design = fromV3(raw.design);
   else if (raw.version === 1 || raw.version === 2) design = fromV3(fromFlatState(raw.state, raw.version));
   else throw Error('Unsupported project version ' + raw.version + '.');
