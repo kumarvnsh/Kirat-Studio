@@ -236,3 +236,76 @@ test('default view starts in Day mode with Lights Off and mm units; units conver
   assert.match(formatAllUnits(304.8), /304\.8 mm · 12 in · 1 ft/);
 });
 
+test('letter O face extrudes without hole bridging and places LED modules cleanly inside both strokes', async () => {
+  const T = await import('three');
+  const { shapeFromRegion } = await import('../src/scene/scene.ts');
+  const { inside } = await import('../src/artwork/contours.js');
+  const { LED_SIZE } = await import('../src/domain/layout.ts');
+  // Construct a 64-vertex 'O' starting at the exact top apex (y = maxY) with a 48-vertex inner hole.
+  const outer = Array.from({ length: 64 }, (_, i) => {
+    const a = Math.PI / 2 - (i / 64) * Math.PI * 2;
+    return [100 + 95 * Math.cos(a), 110 + 110 * Math.sin(a)] as [number, number];
+  });
+  const hole = Array.from({ length: 48 }, (_, i) => {
+    const a = Math.PI / 2 + (i / 48) * Math.PI * 2;
+    return [100 + 35 * Math.cos(a), 110 + 85 * Math.sin(a)] as [number, number];
+  });
+  const d = design([
+    {
+      id: 'o',
+      name: 'Element 12',
+      type: 'front',
+      group: 'g1',
+      override: false,
+      pixels: 12000,
+      bounds: [5, 0, 195, 220],
+      color: '#ffa030',
+      regions: [{ outer, holes: [hole] }],
+    },
+  ]);
+  d.artwork!.bounds = [0, 0, 200, 220];
+  d.artwork!.imageWidth = 200;
+  d.artwork!.imageHeight = 220;
+  const L = computeLayout(d);
+  const el = L.elements[0];
+  const sh = shapeFromRegion({
+    outer: el.regions[0].outer.map(([x, y]) => [x * 0.001, y * 0.001]),
+    holes: el.regions[0].holes.map((h) => h.map(([x, y]) => [x * 0.001, y * 0.001] as [number, number])),
+  });
+  const g = new T.ExtrudeGeometry([sh], {
+    depth: 0.003,
+    bevelEnabled: true,
+    bevelSize: 0.0003,
+    bevelThickness: 0.0002,
+    bevelSegments: 2,
+    curveSegments: 8,
+  });
+  const pos = g.attributes.position;
+  const h0 = el.regions[0].holes[0];
+  const hcx = h0.reduce((s, p) => s + p[0], 0) / h0.length;
+  const hcy = h0.reduce((s, p) => s + p[1], 0) / h0.length;
+  const innerHole = h0.map(([x, y]) => [hcx + (x - hcx) * 0.8, hcy + (y - hcy) * 0.8]);
+  for (let i = 0; i < pos.count; i += 3) {
+    const z0 = pos.getZ(i),
+      z1 = pos.getZ(i + 1),
+      z2 = pos.getZ(i + 2);
+    if (Math.abs(z0 - z1) > 1e-6 || Math.abs(z1 - z2) > 1e-6) continue;
+    const cx = ((pos.getX(i) + pos.getX(i + 1) + pos.getX(i + 2)) / 3) * 1000;
+    const cy = ((pos.getY(i) + pos.getY(i + 1) + pos.getY(i + 2)) / 3) * 1000;
+    assert.equal(inside([cx, cy], innerHole), false, 'no face lid triangle may bridge across the hole of O');
+  }
+  assert.ok(el.leds.some(([x]) => x < hcx), 'left stroke of O has LEDs');
+  assert.ok(el.leds.some(([x]) => x > hcx), 'right stroke of O has LEDs');
+  for (const [x, y] of el.leds) {
+    for (const corner of [
+      [x - LED_SIZE.w / 2, y - LED_SIZE.h / 2],
+      [x + LED_SIZE.w / 2, y - LED_SIZE.h / 2],
+      [x - LED_SIZE.w / 2, y + LED_SIZE.h / 2],
+      [x + LED_SIZE.w / 2, y + LED_SIZE.h / 2],
+    ]) {
+      assert.equal(inside(corner, el.regions[0].outer), true, 'LED corner stays inside outer wall');
+      assert.equal(inside(corner, h0), false, 'LED corner stays outside inner hole');
+    }
+  }
+});
+

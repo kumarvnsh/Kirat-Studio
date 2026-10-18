@@ -45,8 +45,33 @@ const toM = (r: Region): Region => ({
 });
 
 export function shapeFromRegion(region: Region) {
-  const outer = region.outer.map((p) => new T.Vector2(...p));
+  let outer = region.outer.map((p) => new T.Vector2(...p));
   if (!T.ShapeUtils.isClockWise(outer)) outer.reverse();
+  // Rotate `outer` so `outer[0]` is strictly inside the contour's bounding box whenever possible.
+  // Three.js's bundled Earcut starts its bbox loop at index 1 (`for (let i = dim; i < outerLen; i += dim)`),
+  // so if `outer[0]` is a unique minX/maxX/minY/maxY extremum (such as the top apex of letter 'o'),
+  // its Morton z-order code overflows 32767 and corrupts hole triangulation on the face.
+  if (outer.length > 3) {
+    const xs = outer.map((v) => v.x),
+      ys = outer.map((v) => v.y),
+      minX = Math.min(...xs),
+      maxX = Math.max(...xs),
+      minY = Math.min(...ys),
+      maxY = Math.max(...ys);
+    let bestIdx = 0,
+      bestMargin = -Infinity;
+    for (let i = 0; i < outer.length; i++) {
+      const v = outer[i],
+        margin = Math.min(v.x - minX, maxX - v.x, v.y - minY, maxY - v.y);
+      if (margin > bestMargin) {
+        bestMargin = margin;
+        bestIdx = i;
+      }
+    }
+    if (bestIdx > 0 && bestMargin > 0) {
+      outer = [...outer.slice(bestIdx), ...outer.slice(0, bestIdx)];
+    }
+  }
   const s = new T.Shape(outer);
   for (const h of region.holes) {
     const v = h.map((p) => new T.Vector2(...p));

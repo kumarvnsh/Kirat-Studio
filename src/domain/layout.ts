@@ -131,18 +131,96 @@ export function frameMembers(s: DesignSettings): FrameMember[] {
   ];
 }
 
-// Regular grid of points inside the regions (outside holes).
-function grid(regions: Region[], spacing: number, limit: number): Point[] {
+// Horizontal interior intervals [sx0, sx1] of region `r` at height `y` (even-odd rule over outer + holes).
+function scanlineIntervals(r: Region, y: number): [number, number][] {
+  const xs: number[] = [];
+  for (const loop of [r.outer, ...r.holes]) {
+    for (let i = 0, j = loop.length - 1; i < loop.length; j = i++) {
+      const a = loop[i],
+        b = loop[j];
+      if (a[1] > y !== b[1] > y) {
+        xs.push(a[0] + ((y - a[1]) * (b[0] - a[0])) / (b[1] - a[1]));
+      }
+    }
+  }
+  xs.sort((a, b) => a - b);
+  const spans: [number, number][] = [];
+  for (let i = 0; i + 1 < xs.length; i += 2) {
+    const mid = (xs[i] + xs[i + 1]) / 2;
+    if (inside([mid, y], r.outer) && !r.holes.some((h) => inside([mid, y], h))) {
+      spans.push([xs[i], xs[i + 1]]);
+    }
+  }
+  return spans;
+}
+
+function pointClear(r: Region, x: number, y: number, padX: number, padY: number): boolean {
+  const pts: Point[] =
+    padX > 0 || padY > 0
+      ? [
+          [x, y],
+          [x - padX, y - padY],
+          [x + padX, y - padY],
+          [x - padX, y + padY],
+          [x + padX, y + padY],
+        ]
+      : [[x, y]];
+  return pts.every((p) => inside(p, r.outer) && !r.holes.some((h) => inside(p, h)));
+}
+
+// Stroke-centred grid of points inside regions (outside holes) with optional footprint clearance.
+function grid(regions: Region[], spacing: number, limit: number, padX = 0, padY = 0): Point[] {
   const out: Point[] = [];
   for (const r of regions) {
     const xs = r.outer.map((v) => v[0]),
       ys = r.outer.map((v) => v[1]),
-      [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
-    for (let y = y0 + Math.min(spacing / 2, (y1 - y0) / 2); y < y1; y += spacing)
-      for (let x = x0 + Math.min(spacing / 2, (x1 - x0) / 2); x < x1; x += spacing) {
-        if (out.length >= limit) return out;
-        if (inside([x, y], r.outer) && !r.holes.some((h) => inside([x, y], h))) out.push([x, y]);
+      [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)],
+      W = x1 - x0,
+      H = y1 - y0;
+    if (W <= 0 || H <= 0) continue;
+    const effPadX = Math.min(padX, W * 0.2),
+      effPadY = Math.min(padY, H * 0.2),
+      marginY = Math.min(Math.max(effPadY + 4, spacing * 0.3), H * 0.35),
+      marginX = Math.min(Math.max(effPadX + 4, spacing * 0.3), W * 0.35),
+      usableH = Math.max(0, H - 2 * marginY),
+      nRows = Math.max(1, Math.floor(usableH / spacing) + 1),
+      cy = (y0 + y1) / 2,
+      rowStart = cy - ((nRows - 1) * spacing) / 2;
+
+    const regionPts: Point[] = [];
+    for (let ri = 0; ri < nRows; ri++) {
+      const baseY = rowStart + ri * spacing;
+      let bestRowPts: Point[] = [];
+      for (const dy of [0, -6, 6, -12, 12]) {
+        const y = baseY + dy;
+        if (y <= y0 + effPadY || y >= y1 - effPadY) continue;
+        const spans = scanlineIntervals(r, y).filter(([a, b]) => b - a >= effPadX * 2 + 2);
+        const rowPts: Point[] = [];
+        for (const [sx0, sx1] of spans) {
+          const spanW = sx1 - sx0,
+            usableW = Math.max(0, spanW - 2 * Math.min(marginX, spanW * 0.35)),
+            nCols = Math.max(1, Math.floor(usableW / spacing) + 1),
+            scx = (sx0 + sx1) / 2,
+            colStart = scx - ((nCols - 1) * spacing) / 2;
+          for (let ci = 0; ci < nCols; ci++) {
+            const x = colStart + ci * spacing;
+            if (pointClear(r, x, y, effPadX, effPadY)) rowPts.push([x, y]);
+          }
+        }
+        if (rowPts.length > bestRowPts.length) {
+          bestRowPts = rowPts;
+          if (dy === 0 && rowPts.length >= spans.length) break;
+        }
       }
+      regionPts.push(...bestRowPts);
+    }
+    if (!regionPts.length && (effPadX > 0 || effPadY > 0)) {
+      regionPts.push(...grid([r], spacing, limit, 0, 0));
+    }
+    for (const pt of regionPts) {
+      if (out.length >= limit) return out;
+      out.push(pt);
+    }
   }
   return out;
 }
@@ -152,7 +230,7 @@ function fixings(regions: Region[]): Point[] {
   const out: Point[] = [];
   for (const r of regions) {
     let pts: Point[] = [];
-    for (let s = STANDOFF_SPACING; s >= 10 && !pts.length; s /= 2) pts = grid([r], s, STANDOFF_LIMIT);
+    for (let s = STANDOFF_SPACING; s >= 10 && !pts.length; s /= 2) pts = grid([r], s, STANDOFF_LIMIT, 3, 3);
     out.push(...pts);
   }
   return out.slice(0, Math.max(STANDOFF_LIMIT, regions.length));
@@ -480,7 +558,9 @@ export function computeLayout(design: DesignState): Layout {
         perimeter: loops.reduce((n, l) => n + perimeter(l), 0),
         base: front,
         parts,
-        leds: recipe.lit ? grid(regions, LED_SPACING, LED_LIMIT - layout.ledcount) : [],
+        leds: recipe.lit
+          ? grid(regions, LED_SPACING, LED_LIMIT - layout.ledcount, LED_SIZE.w / 2 + 2, LED_SIZE.h / 2 + 2)
+          : [],
         fixings: e.type === 'vinyl' ? [] : fixings(regions),
       };
       // Studs pass from the letter back through the fascia into the frame cavity.
