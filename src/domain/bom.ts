@@ -1,7 +1,7 @@
 // Preliminary bill of materials from the layout. Nominal quantities: no waste, seams, joining
 // allowances or nesting. Rows marked `estimate` depend on placeholder rules (LED grid, fixings).
 import { area } from '../artwork/contours.js';
-import { computeLayout, type PartKind } from './layout.ts';
+import { computeLayout, MODULE_W, PSU_LOADING, PSU_W, type PartKind } from './layout.ts';
 import type { DesignState, LayerId } from './project.ts';
 
 export type BomRow = {
@@ -59,11 +59,19 @@ export function bom(design: DesignState): BomRow[] {
     for (const p of e.parts) {
       const key = `${e.group}|${p.kind}|${p.material}`,
         base = { layer: p.layer, item: `${gname} · ${label[p.kind]}`, material: p.material };
-      if (p.kind === 'standoff')
+      if (p.kind === 'stud')
+        addTo(key, { ...base, unit: 'pcs', note: 'one per fixing point', estimate: true }, e.fixings.length);
+      else if (p.kind === 'trim')
+        addTo(
+          key,
+          { ...base, unit: 'm', note: 'outer and inner contours, no joining allowance', estimate: true },
+          e.perimeter / 1000,
+        );
+      else if (p.kind === 'standoff')
         addTo(
           key,
           { ...base, unit: 'pcs', note: `${e.params.standoff} mm long`, estimate: true },
-          e.standoffs.length,
+          e.fixings.length,
         );
       else if (p.kind === 'leds')
         addTo(key, { ...base, unit: 'pcs', note: 'symbolic grid', estimate: true }, e.leds.length);
@@ -81,14 +89,47 @@ export function bom(design: DesignState): BomRow[] {
         );
     }
   }
+  const pw = L.power;
+  if (pw.psus.length)
+    rows.push(
+      {
+        layer: 'power',
+        item: 'LED power supply',
+        material: `${PSU_W} W 12 V PSU (placeholder rating)`,
+        qty: pw.psus.length,
+        unit: 'pcs',
+        note: `load ≈ ${pw.loadW.toFixed(0)} W at ${MODULE_W} W/module, ≤ ${PSU_LOADING * 100}% loading`,
+        estimate: true,
+      },
+      {
+        layer: 'power',
+        item: 'Secondary cable',
+        material: 'Twin-core cable (placeholder)',
+        qty: pw.cables.reduce((n, c) => n + c.length, 0) / 1000,
+        unit: 'm',
+        note: 'routed length, no slack or terminations',
+        estimate: true,
+      },
+      {
+        layer: 'power',
+        item: 'Cable penetrations',
+        material: 'Grommet / gland through fascia',
+        qty: pw.cables.length,
+        unit: 'pcs',
+        note: 'one per lit element',
+        estimate: true,
+      },
+    );
   return [...rows, ...agg.values()];
 }
 
 const label: Record<PartKind, string> = {
+  stud: 'Fixing studs',
   standoff: 'Standoffs',
   back: 'Letter backs',
   returns: 'Return strip',
   leds: 'LED modules',
   face: 'Faces',
+  trim: 'Trim cap',
   flat: 'Flat letters',
 };

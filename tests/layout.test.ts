@@ -65,7 +65,7 @@ test('board stack is contiguous rear to front, backing sheet optional', () => {
 
 test('front-lit letter stacks back, returns, face from the ACP face', () => {
   const L = computeLayout(design([square('a', 0, 'front')]));
-  const parts = L.elements[0].parts.filter((p) => p.kind !== 'leds');
+  const parts = L.elements[0].parts.filter((p) => p.kind !== 'leds' && p.kind !== 'stud');
   assert.deepEqual(
     parts.map((p) => p.kind),
     ['back', 'returns', 'face'],
@@ -77,12 +77,12 @@ test('front-lit letter stacks back, returns, face from the ACP face', () => {
 
 test('group params override recipe defaults; halo letters stand off the fascia', () => {
   const L = computeLayout(design([square('a', 0, 'halo')], { depth: 80, standoff: 25 }));
-  const [standoff, back, returns] = L.elements[0].parts.filter((p) => p.kind !== 'leds');
+  const [standoff, back, returns] = L.elements[0].parts.filter((p) => p.kind !== 'leds' && p.kind !== 'stud');
   assert.equal(standoff.kind, 'standoff');
   assert.equal(standoff.z1 - standoff.z0, 25);
   assert.equal(back.z0, L.letterBase + 25);
   assert.equal(returns.z1 - returns.z0, 80);
-  assert.ok(L.elements[0].standoffs.length >= 1);
+  assert.ok(L.elements[0].fixings.length >= 1);
 });
 
 test('artwork scales to the board in mm and counts lit return length', () => {
@@ -115,4 +115,67 @@ test('bom lists board layers and per-group letter parts with lit quantities', as
   assert.equal(find('Group 1 · Return strip').qty, 7.2); // two 900 mm squares
   assert.equal(find('Group 1 · Faces').qty, 2 * 0.81);
   assert.ok(find('Group 1 · LED modules').estimate);
+});
+
+test('trim cap wraps the face edge and adds to the projection only by its top', () => {
+  const L = computeLayout(design([square('a', 0, 'front')], { trimcap: 8 }));
+  const e = L.elements[0],
+    face = e.parts.find((p) => p.kind === 'face')!,
+    trim = e.parts.find((p) => p.kind === 'trim')!;
+  assert.ok(trim.z0 < face.z0 && trim.z1 > face.z1);
+  assert.match(trim.material, /8 mm lip/);
+  assert.equal(
+    computeLayout(design([square('b', 0, 'front')])).elements[0].parts.some((p) => p.kind === 'trim'),
+    false,
+  );
+});
+
+test('flush letters still get fixing studs through the fascia; vinyl gets none', () => {
+  const L = computeLayout(design([square('a', 0, 'front')]));
+  const stud = L.elements[0].parts.find((p) => p.kind === 'stud')!;
+  assert.ok(L.elements[0].fixings.length >= 1);
+  assert.ok(stud.z0 < L.letterBase && stud.z1 > L.letterBase);
+  const V = computeLayout(design([square('v', 0, 'vinyl')]));
+  assert.equal(V.elements[0].fixings.length, 0);
+});
+
+test('front + halo and full acrylic are lit recipes with LEDs and returns', () => {
+  for (const type of ['fronthalo', 'fullacrylic'] as const) {
+    const e = computeLayout(design([square('a', 0, type)])).elements[0];
+    assert.ok(e.leds.length > 0, type);
+    assert.ok(
+      e.parts.some((p) => p.kind === 'returns'),
+      type,
+    );
+  }
+  const fh = computeLayout(design([square('a', 0, 'fronthalo')])).elements[0];
+  assert.equal(fh.parts.find((p) => p.kind === 'standoff')!.z1 - fh.base, 40);
+});
+
+test('power plan sizes PSUs from LED load and routes one cable per lit element', async () => {
+  const { PSU_W, PSU_LOADING, MODULE_W } = await import('../src/domain/layout.ts');
+  const L = computeLayout(design([square('a', 0, 'front'), square('b', 0, 'front')]));
+  const p = L.power;
+  assert.equal(p.loadW, L.ledcount * MODULE_W);
+  assert.equal(p.psus.length, Math.ceil(p.loadW / (PSU_W * PSU_LOADING)));
+  assert.equal(p.cables.length, 2);
+  for (const c of p.cables) {
+    assert.deepEqual(c.points.at(-1)!.slice(0, 2), p.psus[c.psu].slice(0, 2));
+    assert.ok(c.length > 0);
+  }
+  // Default 40 mm frame is too shallow for the placeholder 38 mm PSU? No: 38 fits in 40.
+  assert.equal(p.warnings.length, 0);
+  const shallow = design([square('a', 0, 'front')]);
+  shallow.settings.frame = 25;
+  assert.match(computeLayout(shallow).power.warnings.join(), /does not fit inside the 25 mm frame/);
+});
+
+test('bom includes studs, trim cap and power rows', async () => {
+  const { bom } = await import('../src/domain/bom.ts');
+  const rows = bom(design([square('a', 0, 'front')], { trimcap: 6 }));
+  const item = (s: string) => rows.find((r) => r.item.includes(s));
+  assert.equal(item('Trim cap')!.qty, 3.6);
+  assert.ok(item('Fixing studs')!.qty >= 1);
+  assert.ok(item('LED power supply')!.qty >= 1);
+  assert.equal(item('Cable penetrations')!.qty, 1);
 });

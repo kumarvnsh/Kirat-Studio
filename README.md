@@ -45,10 +45,15 @@ Further folders from the roadmap (`assembly/`, `fabrication/`, `catalog/`, `digi
 
 ## Status
 
-Milestones A and B done (Kirat group naming waits for `public/kirat-reference.png`). Milestone C in progress:
+Milestones A and B done (Kirat group naming waits for `public/kirat-reference.png`). Milestone C done:
 
-- Done: dimensioned board stack (GI, MS frame, optional backing sheet, ACP) with z positions; recipes for front-lit, halo-lit, flat acrylic / metal / ACP and vinyl, editable per group in the inspector; standoffs for halo and any recipe with a standoff; per-element stack readout (each part's distance from the fascia); preliminary BOM in the Build tab; 9 assembly layers.
-- Not yet: trim cap / face retention, front-and-halo and full-acrylic recipes, letter fixing hardware detail, PSU and wiring positions, a fixing pattern for the ACP.
+- Dimensioned board stack (GI, MS frame, optional backing sheet, ACP) with z positions and frame members.
+- Recipes, editable per artwork group in the inspector: front-lit (optional trim cap), halo-lit, front + halo, full acrylic, flat acrylic / metal / ACP, vinyl. Changing a group's construction resets its params.
+- Letter mounting: fixing studs through the fascia for every non-vinyl letter, plus spacers when a recipe has a standoff.
+- Placeholder power plan: load from the LED grid, PSUs sized at ≤ 80% loading and parked in the bottom-right frame bay, one cable run and penetration per lit element, fit warnings (PSU deeper than the frame, bay full, LED cap).
+- Per-element stack readout, board stack table, power summary and preliminary BOM; 10 assembly layers.
+
+Known limits, deliberately left for later milestones: module/PSU ratings are placeholders until the verified atlas (F); no ACP seam or fixing pattern, cable holes in frame members, or wiring diagram (E); the face-retention method beyond trim cap (e.g. screws, inset) is not modelled.
 
 Units: settings and saved projects use millimetres; `scene.js` converts to metres at the rendering boundary.
 

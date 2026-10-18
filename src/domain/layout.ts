@@ -15,7 +15,7 @@ import type {
 
 export type BoardLayer = { layer: LayerId; name: string; material: string; z0: number; z1: number };
 export type FrameMember = { axis: 'x' | 'y'; length: number; x: number; y: number };
-export type PartKind = 'standoff' | 'back' | 'returns' | 'leds' | 'face' | 'flat';
+export type PartKind = 'stud' | 'standoff' | 'back' | 'returns' | 'leds' | 'face' | 'trim' | 'flat';
 export type LetterPart = { kind: PartKind; layer: LayerId; material: string; z0: number; z1: number };
 export type ElementLayout = {
   id: string;
@@ -26,9 +26,18 @@ export type ElementLayout = {
   regions: Region[];
   bounds: [number, number, number, number]; // x0, y0, x1, y1
   perimeter: number; // all outer and inner contours
+  base: number; // z of the fascia the element is mounted on
   parts: LetterPart[];
   leds: Point[];
-  standoffs: Point[];
+  fixings: Point[]; // stud (and standoff, if any) positions
+};
+export type Point3 = [number, number, number];
+export type Cable = { element: string; psu: number; points: Point3[]; length: number };
+export type Power = {
+  loadW: number;
+  psus: Point3[]; // centres
+  cables: Cable[];
+  warnings: string[];
 };
 export type Layout = {
   scale: number; // mm per traced pixel
@@ -40,6 +49,7 @@ export type Layout = {
   elements: ElementLayout[];
   ledcount: number;
   returnLength: number; // mm
+  power: Power;
 };
 
 export const LED_SPACING = 85;
@@ -47,6 +57,14 @@ export const LED_LIMIT = 360;
 export const LED_SIZE = { w: 21, h: 9, d: 7 };
 const STANDOFF_SPACING = 250;
 const STANDOFF_LIMIT = 12;
+export const STUD_EMBED = 20; // stud length behind the fascia face
+export const TRIM_TOP = 1.5; // trim cap thickness over the face
+
+// Placeholder electrical ratings until the verified parts atlas (Milestone F).
+export const MODULE_W = 0.72; // W per LED module
+export const PSU_W = 100;
+export const PSU_LOADING = 0.8; // use at most 80% of rated output
+export const PSU_SIZE = { w: 160, h: 98, d: 38 };
 
 export function boardStack(s: DesignSettings): { layers: BoardLayer[]; front: number } {
   const F = s.frame,
@@ -135,6 +153,7 @@ export function computeLayout(design: DesignState): Layout {
     elements: [],
     ledcount: 0,
     returnLength: 0,
+    power: { loadW: 0, psus: [], cables: [], warnings: [] },
   };
   if (a) {
     const [bx0, by0, bx1, by1] = a.bounds;
@@ -164,6 +183,15 @@ export function computeLayout(design: DesignState): Layout {
         parts.push({ kind: 'leds', layer: 'leds', material: m.leds!, z0: z, z1: z + LED_SIZE.d });
         add('returns', 'returns', params.depth, `${m.returns} ${params.gauge} mm`);
         add('face', 'faces', params.face, `${m.face} ${params.face} mm`);
+        // Trim cap wraps the face edge and the top of the return; it doesn't add to the stack below it.
+        if (params.trimcap > 0)
+          parts.push({
+            kind: 'trim',
+            layer: 'faces',
+            material: `${m.trim} ${params.trimcap} mm lip`,
+            z0: z - params.face - 5,
+            z1: z + TRIM_TOP,
+          });
       } else
         add(
           'flat',
@@ -183,17 +211,77 @@ export function computeLayout(design: DesignState): Layout {
         regions,
         bounds: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)],
         perimeter: loops.reduce((n, l) => n + perimeter(l), 0),
+        base: front,
         parts,
         leds: recipe.lit ? grid(regions, LED_SPACING, LED_LIMIT - layout.ledcount) : [],
-        standoffs: params.standoff > 0 ? fixings(regions) : [],
+        fixings: e.type === 'vinyl' ? [] : fixings(regions),
       };
+      // Studs pass from the letter back through the fascia into the frame cavity.
+      if (el.fixings.length) {
+        const acp = board[board.length - 1];
+        parts.push({
+          kind: 'stud',
+          layer: 'mounting',
+          material: 'Fixing stud M5 (placeholder)',
+          z0: acp.z0 - STUD_EMBED,
+          z1: front + params.standoff + 2,
+        });
+      }
       layout.ledcount += el.leds.length;
       if (recipe.lit) layout.returnLength += el.perimeter;
       layout.elements.push(el);
     }
   }
+  layout.power = planPower(layout, s);
   cache.set(design, layout);
   return layout;
+}
+
+// Placeholder power plan: size PSUs from the LED load, park them in the bottom-right frame bay,
+// and route one cable per lit element: through the fascia, down inside the frame, across to its PSU.
+export function planPower(L: Layout, s: DesignSettings): Power {
+  const lit = L.elements.filter((e) => e.leds.length),
+    loadW = L.ledcount * MODULE_W,
+    count = loadW > 0 ? Math.ceil(loadW / (PSU_W * PSU_LOADING)) : 0,
+    { width: W, height: H, frame: F } = s,
+    warnings: string[] = [];
+  const bayLeft = W / 6 + F / 2,
+    bayRight = (W - F) / 2 - F / 2,
+    perRow = Math.max(1, Math.floor((bayRight - bayLeft - 20) / (PSU_SIZE.w + 20))),
+    psus: Point3[] = [];
+  for (let i = 0; i < count; i++) {
+    const col = i % perRow,
+      row = Math.floor(i / perRow);
+    psus.push([
+      bayRight - 20 - PSU_SIZE.w / 2 - col * (PSU_SIZE.w + 20),
+      -H / 2 + F + 20 + PSU_SIZE.h / 2 + row * (PSU_SIZE.h + 20),
+      0,
+    ]);
+  }
+  if (count && PSU_SIZE.d > F)
+    warnings.push(
+      `PSU (${PSU_SIZE.d} mm deep) does not fit inside the ${F} mm frame section. Use a deeper frame or an external enclosure.`,
+    );
+  if (psus.some((p) => p[1] + PSU_SIZE.h / 2 > H / 2 - F))
+    warnings.push('PSUs do not fit in the bottom-right frame bay. Plan a separate enclosure.');
+  if (L.ledcount >= LED_LIMIT) warnings.push(`LED grid capped at ${LED_LIMIT} modules; load is understated.`);
+  const cables: Cable[] = lit.map((e, i) => {
+    const [px, py] = e.leds[0],
+      psu = psus.length ? i % psus.length : 0,
+      [qx, qy] = psus[psu] ?? [px, py],
+      back = e.parts.find((p) => p.kind === 'back')!.z0,
+      points: Point3[] = [
+        [px, py, back],
+        [px, py, 0],
+        [px, qy, 0],
+        [qx, qy, 0],
+      ];
+    const length = points
+      .slice(1)
+      .reduce((n, p, j) => n + Math.hypot(...(p.map((v, k) => v - points[j][k]) as Point3)), 0);
+    return { element: e.id, psu, points, length };
+  });
+  return { loadW, psus, cables, warnings };
 }
 
 // Everything the renderer needs: one flat object, read-only.

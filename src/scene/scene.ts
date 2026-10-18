@@ -11,7 +11,8 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { bentPath } from '../artwork/contours.js';
 import { LAYERS, type LayerId, type Point, type Region } from '../domain/project.ts';
 import { LED_SIZE, type ElementLayout, type LetterPart, type SceneInput } from '../domain/layout.ts';
-import { recipes } from '../domain/recipes.ts';
+import { frontLit, haloLit, recipes } from '../domain/recipes.ts';
+import { PSU_SIZE } from '../domain/layout.ts';
 
 const M = 0.001;
 const EXPLODE_STEP = 0.12; // metres between layers at 100% explode
@@ -348,6 +349,7 @@ export class SignScene {
         this.layers.get('leds')!.add(light);
       }
     }
+    this.buildPower(s);
     this.setNight(s.night);
     this.setVisibility(s);
     if (s.mode === 'bend') this.buildBend(s);
@@ -393,7 +395,7 @@ export class SignScene {
     const faceMat = () => {
       const m = this.material(art ? '#ffffff' : st.facecolor, 0, 0.32);
       if (art) m.map = this.texture;
-      if (e.type === 'front' && lit) {
+      if (frontLit(e.type) && lit) {
         m.emissive.set(art ? '#ffffff' : st.facecolor);
         m.emissiveIntensity = s.night ? 3.8 * s.brightness : 0.025;
         if (art) m.emissiveMap = this.texture;
@@ -401,20 +403,30 @@ export class SignScene {
       return m;
     };
 
-    if (p.kind === 'standoff') {
-      const mat = this.material('#b9c2c4', 0.9, 0.3);
-      for (const [x, y] of e.standoffs) {
-        const g = new T.CylinderGeometry(0.006, 0.006, depth, 12);
+    const ring = (width: number, mat: T.Material) => {
+      for (const r of regions)
+        for (const loop of [r.outer, ...r.holes]) {
+          const ss = strokeShapes(loop, width);
+          if (ss.length)
+            mesh(new T.ExtrudeGeometry(ss, { depth, bevelEnabled: false }), mat, p.layer, z0, e.id);
+        }
+    };
+    const pins = (radius: number, mat: T.Material) => {
+      for (const [x, y] of e.fixings) {
+        const g = new T.CylinderGeometry(radius, radius, depth, 12);
         g.rotateX(Math.PI / 2);
         mesh(g, mat, 'mounting', z0 + depth / 2, e.id).position.set(x * M, y * M, z0 + depth / 2);
       }
-    } else if (p.kind === 'back') {
-      const mat =
-        e.type === 'halo'
-          ? new T.MeshStandardMaterial({ color: '#dfe8ea', roughness: 0.1, transparent: true, opacity: 0.45 })
-          : this.material('#75878c', 0.05, 0.8);
+    };
+
+    if (p.kind === 'stud') pins(0.0025, this.material('#8d969a', 0.9, 0.35));
+    else if (p.kind === 'standoff') pins(0.006, this.material('#b9c2c4', 0.9, 0.3));
+    else if (p.kind === 'back') {
+      const mat = haloLit(e.type)
+        ? new T.MeshStandardMaterial({ color: '#dfe8ea', roughness: 0.1, transparent: true, opacity: 0.45 })
+        : this.material('#75878c', 0.05, 0.8);
       extrude(mat, false);
-      if (e.type === 'halo' && s.night && lit) this.haloGlow(regions, L.letterBase * M + 0.0001, e.id, mesh);
+      if (haloLit(e.type) && s.night && lit) this.haloGlow(regions, L.letterBase * M + 0.0001, e.id, mesh);
     } else if (p.kind === 'leds') {
       const body = this.material('#e7eee4', 0, 0.4),
         lens = this.material('#fff5cc', 0, 0.2);
@@ -431,17 +443,53 @@ export class SignScene {
         l.position.set(x * M, y * M, z0 + LED_SIZE.d * M);
       }
     } else if (p.kind === 'returns') {
-      const mat = this.material('#aab9bf', 0.92, 0.25);
-      for (const r of regions)
-        for (const loop of [r.outer, ...r.holes]) {
-          const ss = strokeShapes(loop, e.params.gauge * M);
-          if (ss.length)
-            mesh(new T.ExtrudeGeometry(ss, { depth, bevelEnabled: false }), mat, 'returns', z0, e.id);
+      // Full acrylic letters glow through their sides; metal returns stay dark.
+      if (e.type === 'fullacrylic') {
+        const m = new T.MeshStandardMaterial({
+          color: st.facecolor,
+          roughness: 0.2,
+          transparent: true,
+          opacity: 0.85,
+        });
+        if (lit) {
+          m.emissive.set(st.facecolor);
+          m.emissiveIntensity = s.night ? 1.6 * s.brightness : 0.02;
         }
-    } else if (p.kind === 'face') {
+        ring(e.params.gauge * M, m);
+      } else ring(e.params.gauge * M, this.material('#aab9bf', 0.92, 0.25));
+    } else if (p.kind === 'trim')
+      ring((2 * e.params.trimcap + e.params.gauge) * M, this.material('#3a3f42', 0.1, 0.55));
+    else if (p.kind === 'face')
       extrude(e.type === 'halo' ? this.material('#bdc8c9', 0.9, 0.25) : faceMat(), e.type !== 'halo');
-    } else if (e.type === 'metal') extrude(this.material('#b8c8cf', 0.95, 0.22), false);
+    else if (e.type === 'metal') extrude(this.material('#b8c8cf', 0.95, 0.22), false);
     else extrude(faceMat(), true);
+  }
+
+  // Placeholder PSUs in the frame bay and cable runs from each lit letter.
+  private buildPower(s: SceneInput) {
+    if (s.mode === 'bend') return;
+    const g = this.layers.get('power')!,
+      psuMat = this.material('#c9ced0', 0.8, 0.35),
+      cableMat = this.material('#1d1f20', 0, 0.7);
+    for (const [x, y, z] of s.layout.power.psus) {
+      const m = new T.Mesh(new T.BoxGeometry(PSU_SIZE.w * M, PSU_SIZE.h * M, PSU_SIZE.d * M), psuMat);
+      m.position.set(x * M, y * M, z * M);
+      m.castShadow = true;
+      g.add(m);
+    }
+    for (const c of s.layout.power.cables) {
+      const path = new T.CurvePath<T.Vector3>();
+      for (let i = 1; i < c.points.length; i++)
+        path.add(
+          new T.LineCurve3(
+            new T.Vector3(...c.points[i - 1].map((v) => v * M)),
+            new T.Vector3(...c.points[i].map((v) => v * M)),
+          ),
+        );
+      const m = new T.Mesh(new T.TubeGeometry(path, 8 * c.points.length, 0.0025, 6, false), cableMat);
+      m.userData.part = c.element;
+      g.add(m);
+    }
   }
 
   // Light pool on the fascia behind a halo letter.

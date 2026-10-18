@@ -4,11 +4,22 @@
 //   FabricationState — how the workshop makes it. Saved separately from the design.
 // Dimensions are millimetres. Conversion to metres happens only in src/scene.
 
-export type ConstructionType = 'front' | 'halo' | 'acrylic' | 'metal' | 'acplogo' | 'vinyl' | 'omit';
+export type ConstructionType =
+  | 'front'
+  | 'halo'
+  | 'fronthalo'
+  | 'fullacrylic'
+  | 'acrylic'
+  | 'metal'
+  | 'acplogo'
+  | 'vinyl'
+  | 'omit';
 
 export const constructionNames: Record<ConstructionType, string> = {
   front: 'Front-lit',
   halo: 'Halo-lit',
+  fronthalo: 'Front + halo',
+  fullacrylic: 'Full acrylic',
   acrylic: 'Flat acrylic',
   metal: 'Flat metal',
   acplogo: 'ACP logo',
@@ -133,6 +144,12 @@ export const LAYERS = [
     name: 'LED modules',
     kind: 'letter',
     note: 'Symbolic module grid — not a manufacturer layout or electrical calculation.',
+  },
+  {
+    id: 'power',
+    name: 'Power & wiring',
+    kind: 'board',
+    note: 'PSUs in the bottom-right frame bay, a cable penetration behind each lit letter; runs cross the intermediate verticals through drilled holes (not modelled). Placeholder module and PSU ratings; service access through the rear GI cover.',
   },
   {
     id: 'faces',

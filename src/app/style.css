@@ -1044,3 +1044,8 @@ table.stack small {
 .recipe .pair label {
   margin: 6px 0;
 }
+.callout.warn {
+  background: #fbf1e2;
+  border-color: #e6c9a0;
+  color: #8a5a22;
+}

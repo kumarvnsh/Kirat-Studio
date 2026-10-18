@@ -8,7 +8,7 @@ import {
   type NumericKey,
 } from '../domain/project.ts';
 import { textArtworkURL, uploadURL } from '../artwork/import.ts';
-import { boardStack } from '../domain/layout.ts';
+import { boardStack, computeLayout, MODULE_W, PSU_LOADING, PSU_W } from '../domain/layout.ts';
 import { bom } from '../domain/bom.ts';
 import { hasBackup, importImage, restoreBackup, retrace, setMode } from './actions.ts';
 import { editDesign, say, setTrace, setView, showAll, useApp, useDesign, useView } from './store.ts';
@@ -340,6 +340,7 @@ function BuildPanel() {
         Show complete assembly
       </button>
       <p className="muted">Rear to front. An explanatory sequence, not an approved workshop procedure.</p>
+      <PowerSummary />
       <PartsList />
     </section>
   );
@@ -367,6 +368,45 @@ function StackTable({ settings }: { settings: DesignSettings }) {
         </tr>
       </tbody>
     </table>
+  );
+}
+
+function PowerSummary() {
+  const p = computeLayout(useDesign()).power;
+  if (!p.cables.length) return null;
+  return (
+    <>
+      <div className="sectionlabel">POWER (PLACEHOLDER RATINGS)</div>
+      <table className="stack">
+        <tbody>
+          <tr>
+            <td>
+              Connected load
+              <small>{MODULE_W} W per module</small>
+            </td>
+            <td>≈ {p.loadW.toFixed(0)} W</td>
+          </tr>
+          <tr>
+            <td>
+              Power supplies
+              <small>
+                {PSU_W} W each, ≤ {PSU_LOADING * 100}% loading
+              </small>
+            </td>
+            <td>{p.psus.length}</td>
+          </tr>
+          <tr>
+            <td>Cable runs</td>
+            <td>{p.cables.length}</td>
+          </tr>
+        </tbody>
+      </table>
+      {p.warnings.map((w) => (
+        <div key={w} className="callout warn">
+          {w}
+        </div>
+      ))}
+    </>
   );
 }
 

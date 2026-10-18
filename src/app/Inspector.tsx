@@ -127,6 +127,8 @@ export function Inspector() {
         <select value={shownType} onChange={(e) => setType(e.target.value as ConstructionType)}>
           <option value="front">Front-lit channel letter</option>
           <option value="halo">Halo-lit metal letter</option>
+          <option value="fronthalo">Front + halo letter</option>
+          <option value="fullacrylic">Full acrylic letter</option>
           <option value="acrylic">Flat acrylic</option>
           <option value="metal">Flat metal</option>
           <option value="acplogo">Flat ACP logo</option>
@@ -224,7 +226,7 @@ export function Inspector() {
 
 // Size and the rear-to-front stack of one placed element, measured from the ACP face.
 function ElementDetails({ e, holes }: { e: ElementLayout; holes: number }) {
-  const base = e.parts[0]?.z0 ?? 0,
+  const base = e.base,
     mm = (n: number) => +n.toFixed(2);
   return (
     <>
@@ -237,7 +239,7 @@ function ElementDetails({ e, holes }: { e: ElementLayout; holes: number }) {
       <table className="stack">
         <tbody>
           {e.parts
-            .filter((p) => p.kind !== 'leds')
+            .filter((p) => p.kind !== 'leds' && p.kind !== 'stud')
             .map((p) => (
               <tr key={p.kind}>
                 <td>
@@ -260,7 +262,7 @@ function ElementDetails({ e, holes }: { e: ElementLayout; holes: number }) {
         </tbody>
       </table>
       {e.leds.length > 0 && <small>{e.leds.length} symbolic LED positions. </small>}
-      {e.standoffs.length > 0 && <small>{e.standoffs.length} standoffs. </small>}
+      {e.fixings.length > 0 && <small>{e.fixings.length} fixing points. </small>}
       <small>Perimeter is not a compensated strip cut length.</small>
     </>
   );

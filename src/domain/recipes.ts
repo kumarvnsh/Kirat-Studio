@@ -14,9 +14,9 @@ const P = (label: string, min: number, max: number, step: number, value: number)
 
 export type Recipe = {
   name: string;
-  lit: 'front' | 'halo' | null;
+  lit: 'front' | 'halo' | 'both' | null; // which way the light leaves the letter
   params: Record<string, Param>;
-  materials: Partial<Record<'standoff' | 'back' | 'returns' | 'leds' | 'face' | 'flat', string>>;
+  materials: Partial<Record<'standoff' | 'back' | 'returns' | 'leds' | 'face' | 'flat' | 'trim', string>>;
 };
 
 export const recipes: Record<ConstructionType, Recipe> = {
@@ -29,6 +29,7 @@ export const recipes: Record<ConstructionType, Recipe> = {
       depth: P('Return depth', 20, 200, 1, 60),
       gauge: P('Return gauge', 0.4, 2, 0.1, 0.6),
       face: P('Acrylic face', 1, 20, 0.5, 3),
+      trimcap: P('Trim cap lip (0 = none)', 0, 25, 1, 0),
     },
     materials: {
       standoff: 'Mounting spacer',
@@ -36,6 +37,45 @@ export const recipes: Record<ConstructionType, Recipe> = {
       returns: 'Aluminium channel strip',
       leds: 'LED module (symbolic)',
       face: 'Opal acrylic face',
+      trim: 'Trim cap',
+    },
+  },
+  fronthalo: {
+    name: 'Front + halo letter',
+    lit: 'both',
+    params: {
+      standoff: P('Standoff from fascia', 10, 100, 1, 40),
+      back: P('Clear back', 2, 10, 0.5, 5),
+      depth: P('Return depth', 20, 200, 1, 60),
+      gauge: P('Return gauge', 0.4, 2, 0.1, 0.8),
+      face: P('Acrylic face', 1, 20, 0.5, 3),
+      trimcap: P('Trim cap lip (0 = none)', 0, 25, 1, 0),
+    },
+    materials: {
+      standoff: 'Threaded spacer',
+      back: 'Clear acrylic back',
+      returns: 'Aluminium return',
+      leds: 'LED module (symbolic, front + rear)',
+      face: 'Opal acrylic face',
+      trim: 'Trim cap',
+    },
+  },
+  fullacrylic: {
+    name: 'Full acrylic letter',
+    lit: 'front',
+    params: {
+      standoff: P('Standoff from fascia', 0, 100, 1, 0),
+      back: P('Letter back', 1, 10, 0.5, 3),
+      depth: P('Acrylic side height', 15, 150, 1, 50),
+      gauge: P('Acrylic side thickness', 2, 6, 0.5, 3),
+      face: P('Acrylic face', 2, 20, 0.5, 5),
+    },
+    materials: {
+      standoff: 'Mounting spacer',
+      back: 'Acrylic letter back',
+      returns: 'Acrylic side strip (solvent-bonded)',
+      leds: 'LED module (symbolic)',
+      face: 'Acrylic face',
     },
   },
   halo: {
@@ -90,6 +130,10 @@ export const recipes: Record<ConstructionType, Recipe> = {
 };
 
 export const VINYL_THICKNESS = 0.15;
+
+// Which lighting effects a construction produces.
+export const frontLit = (t: ConstructionType) => recipes[t].lit === 'front' || recipes[t].lit === 'both';
+export const haloLit = (t: ConstructionType) => recipes[t].lit === 'halo' || recipes[t].lit === 'both';
 
 // Recipe defaults, overridden by the group's params when the element uses the group's construction.
 export function resolveParams(type: ConstructionType, group?: ArtworkGroup): Record<string, number> {
