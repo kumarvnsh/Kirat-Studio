@@ -1,6 +1,7 @@
 // Layout: turns a design into dimensioned physical parts (millimetres, sign coordinates).
 // x right, y up, origin at the board centre; z out of the wall, 0 at the centre of the steel frame.
 // The renderer, the BOM and the inspector all read this; none of them repeat the math.
+import { normalizeScenePreset } from './scenePresets.ts';
 import { inside, perimeter } from '../artwork/contours.js';
 import { recipes, resolveParams, VINYL_THICKNESS } from './recipes.ts';
 import { assemblySteps, visibleLayers } from './assembly.ts';
@@ -648,6 +649,7 @@ export function sceneInput(design: DesignState, view: ViewState) {
   const a = design.artwork;
   return {
     ...view,
+    scenePreset: normalizeScenePreset(view.scenePreset),
     settings: design.settings,
     layout: computeLayout(design),
     visibleLayers: visibleLayers(assemblySteps(design), view.step),

@@ -5,6 +5,7 @@ import { inside } from '../artwork/contours.js';
 import { loadImage } from '../artwork/import.ts';
 import { constructionNames } from '../domain/project.ts';
 import { environments, type Environment } from '../domain/lighting.ts';
+import { scenePresets, normalizeScenePreset } from '../domain/scenePresets.ts';
 import { computeLayout, sceneInput } from '../domain/layout.ts';
 import { formatAllUnits, formatDimsAllUnits, formatDimsInUnit } from '../domain/units.ts';
 import { fabricationPlan } from '../fabrication/plan.ts';
@@ -56,7 +57,7 @@ export function Viewport({
         if (!id) clearSelection();
         else if (add) toggleSelect(id);
         else select(id);
-      });
+      }, message => say(message));
     } catch (e) {
       console.error(e);
       setNo3d(true);
@@ -91,6 +92,15 @@ export function Viewport({
     if (!ready && artwork) return;
     v.build(sceneInput(design, getState().view), ready ? art!.canvas : null);
   }, [design, ready, art, artwork, view.mode, bendTarget]);
+
+  // Scene settings reuse the sign geometry and update their own lighting.
+  useEffect(() => {
+    const v = viewer.current;
+    if (!v?.state || (!ready && artwork)) return;
+    const input = sceneInput(design, getState().view);
+    v.setScene(input);
+    v.setEnvironment(input);
+  }, [ready, design, view.scenePreset, view.mode]);
 
   // Fast environment & camera exposure update (no geometry rebuild).
   useEffect(() => {
@@ -137,7 +147,7 @@ export function Viewport({
       viewer.current?.fit();
     }, 60);
     return () => clearTimeout(t);
-  }, [ready, art, view.mode, view.isolate, view.presentation]);
+  }, [ready, art, view.mode, view.scenePreset, view.isolate, view.presentation]);
 
   const [traceZoom, setTraceZoom] = useState(1);
   const scope = selectionScope(artwork, view);
@@ -166,6 +176,9 @@ export function Viewport({
         </div>
         <div className="lightingbuttons">
           {!overlay && <>
+          {view.mode === '3d' && <select aria-label="Scene" value={normalizeScenePreset(view.scenePreset)} onChange={event => setView({ scenePreset: normalizeScenePreset(event.target.value) })}>
+            {Object.entries(scenePresets).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          </select>}
           <select aria-label="Time of day" value={view.environment} onChange={e => setView({ environment: e.target.value as Environment })}>
             {(Object.keys(environments) as Environment[]).map(env => <option key={env} value={env}>{environments[env].label}</option>)}
           </select>

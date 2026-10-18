@@ -19,7 +19,7 @@ export function PresentationPanel() {
       } catch (err) { if (live) setError((err as Error).message); }
     });
     return () => { live = false; cancelAnimationFrame(timer); };
-  },[compare, design, view.lights, view.dimming, view.exposure]);
+  },[compare, design, view.lights, view.dimming, view.exposure, view.scenePreset]);
   return <div className={'presentation-panel' + (compare ? ' comparing' : '')}>
     <div className="presentation-toolbar"><div><span className="eyebrow">SIGN CONCEPT</span><h1>Kirat Creations</h1></div>
       <div className="row"><button aria-pressed={compare} onClick={() => setCompare(!compare)}>{compare ? 'Single view' : 'Compare day / night'}</button><button aria-expanded={summary} onClick={() => setSummary(!summary)}>Construction summary</button></div></div>

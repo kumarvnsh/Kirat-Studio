@@ -93,8 +93,9 @@ p { margin-bottom: 16px; }
 .unit-selector button.active { background: #274b5d; color: #fff; }
 .unit-selector-label { font-size: 11px; align-self: center; padding: 0 6px; }
 .studio-canvas { display: flex; flex-direction: column; min-width: 0; min-height: 0; position: relative; background: #e0e7eb; overflow: hidden; }
-.viewportbar { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 14px 16px; z-index: 5; background: #e7edf0; }
+.viewportbar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; padding: 14px 16px; z-index: 5; background: #e7edf0; }
 .viewbar-left, .lightingbuttons, .viewtabs { display: flex; align-items: center; gap: 5px; }
+.lightingbuttons { flex-wrap: wrap; justify-content: flex-end; }
 .viewportbar button, .viewportbar select { font-size: 11px; padding: 7px 10px; width: auto; margin: 0; height: 33px; background: #f9fbfc; border-color: #d0dce2; }
 .viewtabs { padding: 2px; border: 1px solid #d0dbe1; background: #edf2f4; border-radius: 5px; }
 .viewtabs button { border: 0; background: none; height: auto; padding: 5px 10px; }

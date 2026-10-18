@@ -2,8 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { assemblyFrame } from '../src/app/assemblyState.ts';
 import { defaultSettings, LAYERS } from '../src/domain/project.ts';
+import { serialise, parseProject } from '../src/storage/project.ts';
 import { assemblySteps } from '../src/domain/assembly.ts';
-import { getState, loadDesign, setSaveStatus } from '../src/app/store.ts';
+import { getState, loadDesign, setSaveStatus, setView } from '../src/app/store.ts';
 
 test('save feedback does not create design history and loaded projects select the board', () => {
   loadDesign({ settings: defaultSettings(), artwork: null }, 'Loaded');
@@ -26,4 +27,19 @@ test('assembly step derives actual cumulative layers and clamps playback bounds'
   const backed = assemblySteps({ settings: { ...defaultSettings(), backing: 2 }, artwork: null });
   assert.equal(backed.length, steps.length + 1);
   assert.equal(assemblyFrame(backed, 999).step, backed.length);
+});
+
+test('scene presets stay out of design history and saved projects', () => {
+  const design = { settings: defaultSettings(), artwork: null };
+  loadDesign(design, 'Loaded');
+  const history = getState().design;
+  setView({ scenePreset: 'interior' });
+  assert.equal(getState().view.scenePreset, 'interior');
+  assert.equal(getState().design, history);
+  assert.equal(getState().view.environment, 'day');
+  const saved = serialise({ design, fabrication: getState().fabrication });
+  assert.equal(saved.includes('scenePreset'), false);
+  const reopened = parseProject(saved);
+  loadDesign(reopened.design, 'Reopened', reopened.fabrication);
+  assert.equal(getState().view.scenePreset, 'studio');
 });
