@@ -77,3 +77,32 @@ Navy for structure and primary actions; warm brass for active focus and accents;
 The user selected Focused professional studio, approved its screen designs and written specification, and requested new image_gen construction references. Four generated references are saved in `public/images/construction-references/`; their prompts and provenance are documented there. The implementation plan is saved in `docs/superpowers/plans/2026-10-18-focused-professional-studio.md`. The application UI has not yet been redesigned.
 
 - [Generated construction-reference gallery](22-generated-letter-references.png)
+
+
+## Implemented local studio — 2026-10-18
+
+The approved Focused professional studio direction is implemented in the local React/Vite application. No ChatGPT Sites deployment is involved. The existing geometry, project v4 compatibility and exporters remain in use.
+
+- Design: searchable collapsed layers, persistent preview, scoped essential-first properties, linked dimension editing, validated numeric drafts, source-aware artwork review and illustrated construction chooser.
+- Assembly: real dependency-ordered steps, cumulative visibility, playback and per-step quantities.
+- Fabrication: searchable cut/strip parts, compensated outlines, selectable bend features, selected-contour forming study, DXF and CSV exports.
+- Presentation: clean editor-free view and day/night comparison using the same camera.
+- Responsive: desktop columns, tablet preview/drawer and phone dock. Collapsed panels can be reopened across modes and phone dock actions restore their panels.
+
+### Verification evidence
+
+88 automated tests pass; TypeScript and production build pass. Existing Vite large-chunk warning remains. Browser checks covered untouched unit conversion (no history edit), rejected numeric drafts, Escape/commit/undo, SVG-specific controls, generated raster text and undo, review-dialog close into 2D, assembly step selection, selected counter strip and bend row, forming/back navigation, DXF and CSV downloads, day/night comparison, and phone property navigation. No console errors were captured. Layout widths were checked at 1440, 1280, 1024, 768 and 390 pixels, with no horizontal document overflow at the measured narrow widths. Spec and code quality reviews identified and verified fixes for mode transitions, exports, panel recovery and numeric data safety.
+
+The browser raster check used generated text; external raster file upload, browser zoom, exhaustive keyboard navigation, save-failure simulation and project-reopen smoke testing were not repeated in this pass. Existing import/storage tests cover their underlying parsing and compatibility. Lighting remains a concept preview; fabrication remains geometric, without machine calibration or nesting.
+
+### Implemented screenshots
+
+- [Desktop Design](implemented/design.jpg)
+- [Assembly](implemented/assembly.jpg)
+- [Fabrication and selected bend](implemented/fabrication.jpg)
+- [Presentation comparison](implemented/presentation.jpg)
+- [Phone properties](implemented/phone-properties.jpg)
+- [Tablet](implemented/tablet.jpg)
+- [SVG import](implemented/vector-import.jpg)
+- [Raster text import](implemented/raster-import.jpg)
+- [Construction references](implemented/construction-chooser.jpg)

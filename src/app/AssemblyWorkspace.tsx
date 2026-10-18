@@ -8,14 +8,17 @@ import { PartsList, PowerSummary } from './ToolsPanel.tsx';
 
 function useAssembly(active: boolean) {
   const design = useDesign(), view = useView(), steps = assemblySteps(design);
-  const count = steps.length, current = Math.min(count, view.step);
+  const count = steps.length;
+  const [selectedStep, setSelectedStep] = useState<number | null>(null);
+  const current = Math.min(count, selectedStep ?? view.step);
   const [playing, setPlaying] = useState(false), [custom, setCustom] = useState(false);
   const choose = (index: number) => {
     setCustom(false);
+    setSelectedStep(Math.max(1,Math.min(count,index)));
     setView({ ...assemblyFrame(steps, index), mode: '3d', isolate: false });
   };
   useEffect(() => { if (!active) setPlaying(false); }, [active]);
-  useEffect(() => { if (view.step === ALL_STEPS && view.layers.every(Boolean)) setCustom(false); }, [view.step,view.layers]);
+  useEffect(() => { if (view.step === ALL_STEPS && view.layers.every(Boolean)) { setCustom(false); setSelectedStep(null); } }, [view.step,view.layers]);
   useEffect(() => {
     if (!playing || !active) return;
     const timer = setInterval(() => {
@@ -27,10 +30,10 @@ function useAssembly(active: boolean) {
   }, [playing, active, count, design]);
   return { steps, current, playing, custom, choose, setCustom,
     togglePlay: () => {
-      if (!playing && current >= count) choose(1);
+      if (!playing) choose(current >= count ? 1 : current);
       setPlaying(!playing);
     },
-    complete: () => { setPlaying(false); setCustom(false); showAll(); },
+    complete: () => { setPlaying(false); setCustom(false); setSelectedStep(null); showAll(); },
   };
 }
 const AssemblyContext = createContext<ReturnType<typeof useAssembly> | null>(null);

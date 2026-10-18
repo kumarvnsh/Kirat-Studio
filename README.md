@@ -70,13 +70,13 @@ Milestone D (customer-ready visuals) done for presentation level:
 
 Milestone E (fabrication preview) done at geometric level:
 
-- Return strips: one schedule per outer contour and counter. Seam at the middle of the longest straight run; bends at their distance from the seam, angle and direction (convex / concave); small turns accumulate so curves keep their full angle; runs of small bends are grouped into curves with an estimated radius. Flat-strip diagram in the Make tab, CSV export.
+- Return strips: one schedule per outer contour and counter. Seam at the middle of the longest straight run; bends at their distance from the seam, angle and direction (convex / concave); small turns accumulate so curves keep their full angle; runs of small bends are grouped into curves with an estimated radius. Flat-strip diagram in the Fabrication workspace, CSV export.
 - Cutting: router (tool radius) or laser (half kerf) compensation with Clipper; checks for counters too small for the tool, counter slots the tool can't reach, and strokes thinner than a minimum. Compensated paths shown over the artwork in the 2D view. Approved outlines are never changed.
 - DXF (maker.js, mm): *-OUTLINE and *-CUT layers for backs, faces, flat letters and vinyl; flat strips with BEND-CONVEX / BEND-CONCAVE lines and labels. Parts at sign positions, not nested.
 - Assembly: 10–11 dependency-ordered steps (frame → GI → backing → ACP; backs → returns → LEDs → faces; mount; power; test) with a parts list per step; play / previous / next / replay.
 - Not yet: bend allowance and machine calibration profiles, notching, acrylic heat-bending, nesting and offcut tracking, wiring diagram.
 
-Editor: the right panel has a **structure tree** (board → groups → letters) and a **properties** panel for the selection.
+Editor: **Design** has a collapsed, searchable **Layers** tree on the left, a persistent preview in the centre, and selection-scoped **Properties** on the right. **Assembly** provides actual ordered steps, playback and layer visibility. **Fabrication** provides searchable parts, cutting outlines, bend schedules and forming studies.
 
 - Tree: click, Ctrl/Cmd-click, Shift-click (range); double-click to rename; eye to hide/show a letter or group (view only); drag letters onto a group to move them; drag groups to reorder; group menu for isolate, move up/down, merge, delete empty; "+ Group" makes a group from the selection.
 - Properties: a group (name, construction, recipe dimensions, face colour, painted return colour, clear letter overrides), one letter (name, group, construction override, face colour override, dimensioned stack) or several letters (move, construction, colour, hide, isolate).
@@ -84,6 +84,8 @@ Editor: the right panel has a **structure tree** (board → groups → letters) 
 - 3D and 2D views: Ctrl/Cmd/Shift-click adds to the selection; isolate works on the whole selection.
 
 Known limits, deliberately left for later milestones: module/PSU ratings are placeholders until the verified atlas (F); no ACP seam or fixing pattern, cable holes in frame members, or wiring diagram (E); the face-retention method beyond trim cap (e.g. screws, inset) is not modelled.
+
+The header contains Project, Help, Present and Export. On phones, Project also contains undo/redo and preview settings; the bottom dock switches Layers/Steps/Parts, Properties and Preview. Numeric fields commit on Enter or blur, Escape cancels, and invalid drafts leave the design unchanged. The construction chooser includes four generated 3D references alongside live anatomy diagrams.
 
 Units: settings and saved projects use millimetres; `scene.js` converts to metres at the rendering boundary.
 

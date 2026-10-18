@@ -164,10 +164,17 @@ export function App() {
       savedEditor.current = null;
     }
   };
+  const taskViews = useRef<Partial<Record<'design' | 'assembly' | 'fabrication', Partial<ViewState>>>>({});
   const changeTask = (mode: 'design' | 'assembly' | 'fabrication') => {
+    if (mode === taskMode) return;
+    const current = getState().view;
+    taskViews.current[taskMode] = { mode: current.mode, step: current.step, layers: [...current.layers], explode: current.explode, isolate: current.isolate, hidden: [...current.hidden] };
     setTaskMode(mode);
-    if (mode !== 'fabrication' && getState().view.mode === 'bend') setView({ mode: '3d', isolate: false });
-    if (mode === 'assembly') setView({ mode: '3d' });
+    const saved = taskViews.current[mode];
+    if (saved) setView(saved);
+    else if (mode === 'assembly') setView({ mode: '3d', step: 99, layers: current.layers.map(()=>true), explode: 0, isolate: false, hidden: [] });
+    else setView({ mode: '3d', isolate: false, step: 99, layers: current.layers.map(()=>true), explode: 0 });
+
   };
   const startVerticalResize = (event: PointerEvent<HTMLDivElement>) => {
     const el = event.currentTarget;
@@ -211,14 +218,14 @@ export function App() {
     : `${leftOpen ? `${leftW}px 5px ` : ''}minmax(0, 1fr)${rightOpen ? ` 5px ${rightW}px` : ''}`;
 
   return <div className={'studio-shell' + (view.presentation ? ' is-presenting' : '')}>
-    <WorkspaceHeader onPresent={togglePresentation} onHelp={() => setShowHelp(true)} onTour={() => { setTaskMode('design'); setTourStep(0); setLeftOpen(true); setRightOpen(true); }} traceCanvas={traceCanvas.current} />
+    <WorkspaceHeader onPresent={togglePresentation} onHelp={() => setShowHelp(true)} onTour={() => { setTaskMode('design'); setTourStep(0); setLeftOpen(true); setRightOpen(true); }} traceCanvas={traceCanvas.current} taskMode={taskMode} onPreviewSettings={()=>setShowPreviewSettings(true)} />
     {!view.presentation && <nav className="studio-task-nav" aria-label="Workspace"><div className="task-tabs">{(['design','assembly','fabrication'] as const).map((mode,i)=><button key={mode} aria-current={taskMode===mode?'page':undefined} className={taskMode===mode?'active':''} onClick={()=>changeTask(mode)}><small>0{i+1}</small>{mode[0].toUpperCase()+mode.slice(1)}</button>)}</div><span className="task-description">{taskMode==='design'?'Shape your sign.':taskMode==='assembly'?'Understand every layer.':'Prepare the details.'}</span></nav>}
     <AssemblyProvider active={taskMode==='assembly' && !view.presentation}><FabricationProvider>
     <div className={'workspace studio-workspace mode-'+taskMode+' mobile-pane-'+mobilePane+(!leftOpen?' left-closed':'')+(!rightOpen?' right-closed':'')}
       style={{ '--workspace-cols':gridCols, '--preview-height':previewHeight+'%' } as React.CSSProperties}>
       {!view.presentation && leftOpen && <><aside className="studio-rail">
         <div hidden={taskMode!=='design'}><div className="panel-heading"><span className="eyebrow">ARTWORK & LAYERS</span><h2>A sign of your own.</h2></div><button className="import-artwork full" onClick={()=>setShowImport(true)}>＋ {design.artwork?'Import / replace artwork':'Import artwork'}</button><StructureTree />
-          <div className="artwork-source"><span className="source-icon">◇</span><b>{design.artwork?.origin==='vector'?'SVG · Original vectors':'Traced artwork'}</b><p>{design.artwork?.elements.length??0} shapes · {design.artwork?.groups.length??0} groups</p><span className={design.artwork?.approved?'status-good':'status-pending'}>{design.artwork?.approved?'✓ Artwork reviewed':'Artwork review pending'}</span><button className="text-button" onClick={()=>{setView({mode:'2d'});setShowImport(true);}}>Review outlines →</button></div>
+          <div className="artwork-source"><span className="source-icon">◇</span><b>{design.artwork?.origin==='vector'?'SVG · Original vectors':'Traced artwork'}</b><p>{design.artwork?.elements.length??0} shapes · {design.artwork?.groups.length??0} groups</p><span className={design.artwork?.approved?'status-good':'status-pending'}>{design.artwork?.approved?'✓ Artwork reviewed':'Artwork review pending'}</span><button className="text-button" onClick={()=>{setView({mode:'2d'});}}>Review outlines →</button></div>
         </div><div hidden={taskMode!=='assembly'}><AssemblySteps /></div><div hidden={taskMode!=='fabrication'}><FabricationParts /></div>
       </aside><div className="resizer" role="separator" aria-label="Resize left panel" onPointerDown={startResize('left')} onDoubleClick={()=>setLeftW(230)} /></>}
       <Viewport traceCanvas={traceCanvas} leftOpen={leftOpen} rightOpen={rightOpen} taskMode={taskMode}
@@ -227,14 +234,14 @@ export function App() {
         overlay={taskMode==='fabrication' && view.mode!=='bend' && !view.presentation?<FabricationPreview />:undefined}
         footer={taskMode==='assembly' && !view.presentation?<AssemblyControls />:undefined} />
       {!view.presentation && <><div className="vertical-resizer" onPointerDown={startVerticalResize} role="separator" aria-label="Resize preview" />
-        <div className="mobile-dock-bar"><button className={mobilePane==='tools'?'active':''} onClick={()=>setMobilePane('tools')}>{taskMode==='design'?'Layers':taskMode==='assembly'?'Steps':'Parts'}</button><button className={mobilePane==='inspector'?'active':''} onClick={()=>setMobilePane('inspector')}>Properties</button><button className={mobilePane==='canvas'?'active':''} onClick={()=>setMobilePane('canvas')}>Preview ⛶</button></div></>}
+        <div className="mobile-dock-bar"><button className={mobilePane==='tools'?'active':''} onClick={()=>{setLeftOpen(true);setMobilePane('tools');}}>{taskMode==='design'?'Layers':taskMode==='assembly'?'Steps':'Parts'}</button><button className={mobilePane==='inspector'?'active':''} onClick={()=>{setRightOpen(true);setMobilePane('inspector');}}>Properties</button><button className={mobilePane==='canvas'?'active':''} onClick={()=>setMobilePane('canvas')}>Preview ⛶</button></div></>}
       {!view.presentation && rightOpen && <><div className="resizer" role="separator" aria-label="Resize properties panel" onPointerDown={startResize('right')} onDoubleClick={()=>setRightW(310)} /><aside className="studio-properties">
         <div hidden={taskMode!=='design'}><Inspector /></div><div hidden={taskMode!=='assembly'}><AssemblyDetails /></div><div hidden={taskMode!=='fabrication'}><FabricationSettings /></div>
       </aside></>}
       {view.presentation && <PresentationPanel />}
     </div></FabricationProvider></AssemblyProvider>
     {!view.presentation && <footer className="studio-status"><div className={'save-state '+saveStatus}><i />{saveStatus==='saving'?'Saving…':saveStatus==='error'?<button onClick={saveProject}>Save failed · Download a copy</button>:saveStatus==='saved'?'Saved in this browser':'Local project'}</div><span className="status-message" role="status">{message}</span><span className="board-size">{formatDimsInUnit(design.settings.width,design.settings.height,view.unit??'mm')}</span><UnitSelector compact /></footer>}
-    {showImport && <Dialog title="Artwork & outline review" onClose={()=>setShowImport(false)}><ArtworkPanel /></Dialog>}
+    {showImport && <Dialog title="Artwork & outline review" onClose={()=>setShowImport(false)}><ArtworkPanel onReview={()=>setShowImport(false)} /></Dialog>}
     {showPreviewSettings && <Dialog title="Preview lighting" onClose={()=>setShowPreviewSettings(false)}><LightingControls /></Dialog>}
     {tourStep!==null && <TourOverlay stepIndex={tourStep} onStep={setTourStep} onClose={()=>setTourStep(null)} onTabChange={tourNavigate} />}
     {showHelp && <Dialog title="Shortcuts & signage guide" onClose={()=>setShowHelp(false)} wide><HelpModal onClose={()=>setShowHelp(false)} onStartTour={()=>{setShowHelp(false);setTourStep(0);}} /></Dialog>}

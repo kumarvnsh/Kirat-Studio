@@ -118,6 +118,7 @@ export type ViewState = {
   layers: boolean[];
   explode: number; // 0..100
   bend: number; // forming progress 0..100
+  bendStrip?: number; // view-only index in outer-then-counter strip order
   environment: Environment; // time of day
   lights: boolean; // sign power
   dimming: number; // 0.1..1 of full LED output

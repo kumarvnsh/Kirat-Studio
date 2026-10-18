@@ -6,7 +6,7 @@ import { selectionScope } from './selection.ts';
 import { resizeArtwork } from '../editor/resizeArtwork.ts';
 // Right-hand panel: the structure tree, then properties for whatever is selected —
 // the backing board, a whole group, one letter, or several letters.
-import { useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { computeLayout, type ElementLayout } from '../domain/layout.ts';
 import { kelvinToHex, LED_TEMPS } from '../domain/lighting.ts';
 import { checkParams, recipes, resolveParams } from '../domain/recipes.ts';
@@ -76,8 +76,10 @@ function isLightHex(hex: string): boolean {
 
 export function Inspector() {
   const design = useDesign(), a = design.artwork, view = useView();
+  const propsRoot = useRef<HTMLElement>(null);
   const scope = selectionScope(a, view), group = a?.groups.find(g => g.id === view.selectedGroup);
-  return <section className="inspector"><div className="properties-heading"><span className="eyebrow">{scope.kind === 'empty' ? 'PROPERTIES' : scope.kind.toUpperCase() + (scope.ids.length ? ' · ' + scope.ids.length + ' SHAPES' : '')}</span></div>
+  useEffect(() => { propsRoot.current?.closest('.studio-properties')?.scrollTo({ top: 0 }); }, [scope.kind, scope.label, scope.ids.join(',')]);
+  return <section className="inspector" ref={propsRoot}><div className="properties-heading"><span className="eyebrow">{scope.kind === 'empty' ? 'PROPERTIES' : scope.kind.toUpperCase() + (scope.ids.length ? ' · ' + scope.ids.length + ' SHAPES' : '')}</span></div>
     {!a ? <div className="empty-state"><h2>Make it yours.</h2><p>Import artwork to configure your sign.</p></div> :
       scope.kind === 'group' && group ? <GroupProps key={group.id} a={a} g={group} /> :
       scope.kind === 'multiple' ? <MultiProps key={scope.ids.join(',')} a={a} ids={scope.ids} /> :

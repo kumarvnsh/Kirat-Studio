@@ -70,7 +70,7 @@ export function FabricationPreview() {
   const selected = state.segment !== null ? segments[state.segment] : null;
   const issues = state.plan.issues.find(issue => issue.element === part.element)?.issues ?? [];
   return <section className="fabrication-preview"><div className="fabrication-title"><div><span className="eyebrow">{part.group} / {part.label}</span><h2>{part.name}</h2></div>
-    {part.kind === 'strip' && <button onClick={() => { select(part.element); setView({ mode: 'bend', bend: 100, isolate: true, selectionActive: true }); }}>Forming study ↗</button>}</div>
+    {part.kind === 'strip' && <button onClick={() => { select(part.element); setView({ mode: 'bend', bend: 100, bendStrip: part.kind === 'strip' ? part.index : undefined, isolate: true, selectionActive: true }); }}>Forming study ↗</button>}</div>
     <div className="outline-card"><Outline regions={regions} toolpaths={part.kind === 'cut' && showPaths ? part.cut.toolpath : []} />
       <div className="outline-meta"><b>{strip ? strip.cutLength.toFixed(1) + ' × ' + strip.height + ' mm' : part.kind === 'cut' ? part.cut.material : ''}</b>
       <span>Original artwork outline</span>{strip ? <span>{segments.length} bend features · {strip.contour} contour</span> : <label className="check"><input type="checkbox" checked={showPaths} onChange={e => setShowPaths(e.target.checked)} />Compensated paths</label>}</div></div>

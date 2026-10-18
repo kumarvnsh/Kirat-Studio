@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   checkSettings,
   defaultSettings,
@@ -39,7 +39,8 @@ import { CrossSectionDiagram } from './ConstructionDiagram.tsx';
 import { ScrubInput, UnitSelector } from './ScrubInput.tsx';
 import { formatAllUnits, formatInUnit } from '../domain/units.ts';
 
-export function ArtworkPanel() {
+export function ArtworkPanel({ onReview }: { onReview?: () => void } = {}) {
+  const uploadRef = useRef<HTMLInputElement>(null);
   const trace = useApp((s) => s.trace);
   const artwork = useDesign().artwork;
   const vectorSource = artwork?.origin === 'vector';
@@ -62,11 +63,11 @@ export function ArtworkPanel() {
       <div className="eyebrow">START WITH YOUR ARTWORK</div>
       <h2>Logo to layers.</h2>
       <p className="muted">Upload artwork, review the trace, then choose how each group is made.</p>
-      <label className="uploadzone">
+      <div className="upload-area"><button className="uploadzone" onClick={()=>uploadRef.current?.click()}>
         <span>＋</span>
         <b>Upload logo</b>
-        <small>SVG (exact vectors), PNG, JPG or WebP · up to 8 MB</small>
-        <input
+        <small>SVG (exact vectors), PNG, JPG or WebP · up to 8 MB</small></button>
+        <input ref={uploadRef}
           type="file"
           accept="image/svg+xml,.svg,image/png,image/jpeg,image/webp"
           hidden
@@ -86,7 +87,7 @@ export function ArtworkPanel() {
             }
           }}
         />
-      </label>
+      </div>
       <div className="row">
         <button onClick={loadKiratSample}>Kirat sample</button>
         <button onClick={() => setShowText(!showText)}>Type text</button>
@@ -146,7 +147,7 @@ export function ArtworkPanel() {
         Trace &amp; rebuild
       </button>
       </>}
-      {artwork && <div className="source-summary"><b>{vectorSource ? 'SVG · Original vectors' : 'Traced artwork'}</b><p>{artwork.elements.length} shapes · {artwork.groups.length} groups</p><button onClick={() => setMode('2d')}>Review outlines →</button></div>}
+      {artwork && <div className="source-summary"><b>{vectorSource ? 'SVG · Original vectors' : 'Traced artwork'}</b><p>{artwork.elements.length} shapes · {artwork.groups.length} groups</p><button onClick={() => { setMode('2d'); onReview?.(); }}>Review outlines →</button></div>}
       <label className="check">
         <input
           type="checkbox"

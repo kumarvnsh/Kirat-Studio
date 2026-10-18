@@ -1,3 +1,4 @@
+import { returnContours } from '../fabrication/forming.ts';
 // Three.js display of a computed layout. Reads SceneInput, never changes the design.
 // Layout is in millimetres; this file converts to metres (M) at the boundary.
 import * as T from 'three';
@@ -813,6 +814,7 @@ export class SignScene {
   }
 
   setVisibility(s: SceneInput) {
+    if (s.mode === 'bend') { this.layers.forEach(layer => { layer.visible = false; }); this.highlight(false); this.draw(); return; }
     const sel = selectionOf(s),
       hidden = new Set(s.hidden);
     LAYERS.forEach((l, i) => {
@@ -891,8 +893,7 @@ export class SignScene {
     forming.name = 'forming';
     this.group.add(forming);
     this.forming = forming;
-    for (const r of part.regions)
-      for (const loop of [r.outer, ...r.holes]) {
+    for (const loop of returnContours(part.regions, s.bendStrip)) {
         const m = new T.Mesh(
           bandGeometry(loop, gauge, depth, s.bend / 100),
           this.material('#c0cbd0', 0.88, 0.27),
@@ -1006,35 +1007,33 @@ export class SignScene {
   // High-resolution still in a given environment: framed for the still's aspect from the current
   // viewing direction, no selection outline. Restores camera, size, environment and highlight afterwards.
   renderStill(width: number, height: number, environment: SceneInput['environment']): string {
-    const s = this.state!,
-      size = this.renderer.getSize(new T.Vector2()),
-      ratio = this.renderer.getPixelRatio();
-    this.highlight(false);
-    this.renderer.setPixelRatio(1);
-    this.renderer.setSize(width, height, false);
-    this.composer.setSize(width, height);
-    const pos = this.camera.position.clone(),
-      target = this.controls.target.clone();
-    this.camera.aspect = width / height;
-    this.camera.updateProjectionMatrix();
-    // Keep the user's viewing direction, but frame the whole sign tightly for this aspect.
-    const dir = pos.clone().sub(target).normalize(),
-      need = Math.max((s.settings.width * M) / this.camera.aspect, s.settings.height * M),
-      dist = (need / (2 * Math.tan((this.camera.fov * Math.PI) / 360))) * 1.12 + 0.1;
-    this.camera.position.copy(target).addScaledVector(dir, dist);
-    this.camera.lookAt(target);
-    this.setEnvironment({ ...s, environment });
-    this.renderNow();
-    const url = this.renderer.domElement.toDataURL('image/png');
-    this.camera.position.copy(pos);
-    this.controls.target.copy(target);
-    this.camera.lookAt(target);
-    this.renderer.setPixelRatio(ratio);
-    this.setEnvironment(s);
-    this.highlight();
-    this.renderer.setSize(size.x, size.y, false);
-    this.resize(true);
-    return url;
+    const state = this.state!, size = this.renderer.getSize(new T.Vector2()), ratio = this.renderer.getPixelRatio();
+    const position = this.camera.position.clone(), target = this.controls.target.clone();
+    try {
+      this.highlight(false);
+      this.renderer.setPixelRatio(1);
+      this.renderer.setSize(width, height, false);
+      this.composer.setSize(width, height);
+      this.camera.aspect = width / height;
+      this.camera.updateProjectionMatrix();
+      const direction = position.clone().sub(target).normalize();
+      const need = Math.max((state.settings.width * M) / this.camera.aspect, state.settings.height * M);
+      const distance = need / (2 * Math.tan((this.camera.fov * Math.PI) / 360)) * 1.12 + .1;
+      this.camera.position.copy(target).addScaledVector(direction, distance);
+      this.camera.lookAt(target);
+      this.setEnvironment({ ...state, environment });
+      this.renderNow();
+      return this.renderer.domElement.toDataURL('image/png');
+    } finally {
+      this.camera.position.copy(position);
+      this.controls.target.copy(target);
+      this.camera.lookAt(target);
+      this.renderer.setPixelRatio(ratio);
+      this.renderer.setSize(size.x, size.y, false);
+      this.setEnvironment(state);
+      this.highlight();
+      this.resize(true);
+    }
   }
 
   export() {

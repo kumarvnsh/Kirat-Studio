@@ -606,4 +606,9 @@ Expected: existing and new tests pass; TypeScript exits zero; Vite emits dist; d
 | Visual system, tablet/phone, accessibility and tour | 10 |
 | Project compatibility, history boundaries and final regression | 2–11 |
 
-Plan review: no placeholder requirements; helper names/contracts match their later consumers. Existing module exports named in extraction steps were verified against source. Detailed JSX moves preserve existing validation and callbacks; new geometry behavior is limited to approved resizing and diagram selection. Execution has not started.
+Plan review: no placeholder requirements; helper names/contracts match their later consumers. Existing module exports named in extraction steps were verified against source. Detailed JSX moves preserve existing validation and callbacks; new geometry behavior is limited to approved resizing and diagram selection. Execution completed in the local application; see the execution record below.
+
+
+## Execution record
+
+Tasks 1–10 implemented. Task 11 validation: 88 tests, typecheck and production build pass; browser and review evidence is recorded in docs/ux-review/2026-10-18/review.md. Broad manual checklists above are retained as the original plan rather than marked as exhaustively executed. The evidence report distinguishes exercised workflows from checks not repeated. Final local integration targets the original checkout serving localhost:5173.

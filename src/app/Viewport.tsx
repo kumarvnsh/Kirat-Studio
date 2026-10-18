@@ -107,7 +107,7 @@ export function Viewport({
     if (ready && view.mode === 'bend' && viewer.current?.state) {
       viewer.current.buildBend(sceneInput(design, view));
     }
-  }, [ready, design, view.mode, view.bend]);
+  }, [ready, design, view.mode, view.bend, view.bendStrip]);
 
   // Cheap visibility pass: stage, layers, explode, isolation, selection.
   useEffect(() => {
@@ -164,14 +164,16 @@ export function Viewport({
             {!view.presentation && <button className={view.mode === '2d' ? 'active' : ''} onClick={() => setMode('2d')}>2D outlines</button>}
           </div>}
         </div>
-        {!overlay && <div className="lightingbuttons">
+        <div className="lightingbuttons">
+          {!overlay && <>
           <select aria-label="Time of day" value={view.environment} onChange={e => setView({ environment: e.target.value as Environment })}>
             {(Object.keys(environments) as Environment[]).map(env => <option key={env} value={env}>{environments[env].label}</option>)}
           </select>
           <button aria-pressed={view.lights} className={view.lights ? 'poweron' : ''} onClick={() => setView({ lights: !view.lights })}>{view.lights ? '● Lights on' : '○ Lights off'}</button>
           {!view.presentation && <button className="preview-settings-button" aria-label="Preview settings" onClick={onPreviewSettings}>⚙</button>}
+          </>}
           {onToggleRight && !view.presentation && <button className="panel-toggle" aria-label="Toggle properties panel" onClick={onToggleRight}>◨</button>}
-        </div>}
+        </div>
       </div>
       <div id="viewport" className={overlay ? 'has-workspace-overlay' : ''}>
         <div id="threehost" ref={host} hidden={view.mode === '2d' || !!overlay} />

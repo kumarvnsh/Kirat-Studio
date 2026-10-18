@@ -164,6 +164,7 @@ export function ScrubInput({
       </span>
       <div className="scrub-input-wrap">
         <input
+          aria-label={label + (displayUnit ? ' ' + displayUnit : '')}
           type="text"
           inputMode="decimal"
           aria-invalid={!!error}
