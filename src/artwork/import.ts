@@ -16,8 +16,6 @@ export const defaultTrace = (): TraceOptions => ({
   threshold: 45,
   minpixels: 12,
 });
-// Crop that isolates the logo in the bundled Kirat reference image.
-export const sampleCrop = { x: 15, y: 28, w: 71, h: 43 };
 
 export function loadImage(url: string): Promise<HTMLImageElement> {
   return new Promise((res, rej) => {
@@ -90,7 +88,11 @@ export async function readUpload(file: File): Promise<{ svg: string } | { url: s
     throw Error('Use SVG, PNG, JPG or WebP.');
   if (!isSvg) return { url: URL.createObjectURL(file) };
   const text = await file.text();
-  if (/<script|foreignObject|<!ENTITY|(?:href|src)\s*=\s*["']\s*(?:https?:|\/\/)|url\s*\(/i.test(text))
+  if (
+    /<script|foreignObject|<!ENTITY|(?:href|src)\s*=\s*["']\s*(?:https?:|\/\/)|url\s*\(\s*(?!['"]?\s*#)/i.test(
+      text,
+    )
+  )
     throw Error(
       'SVG must be self-contained without scripts, external resources or CSS URLs. Export a plain SVG.',
     );

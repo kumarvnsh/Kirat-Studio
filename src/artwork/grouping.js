@@ -111,71 +111,107 @@ export function autoGroup(components) {
     }
   }
 
-  for (let merged = true; merged; ) {
-    merged = false;
-    outer: for (const a of clusters)
-      for (const b of clusters) {
-        if (a === b) continue;
-        const single = a.length < 2 || b.length < 2;
-        const A = band(a),
-          B = band(b),
-          vgap = Math.max(A.y0, B.y0) - Math.min(A.y1, B.y1);
-        // Words of one line can differ in median height (ascenders, descenders): looser match there.
-        // Single shapes (e.g. letters split off by colour) rejoin only at nearly the same height and
-        // letter spacing, so an icon beside the text stays its own group.
-        const stacked =
-            !single &&
-            ratio(A.h, B.h) <= 1.25 &&
-            vgap < Math.max(A.h, B.h) &&
-            Math.min(A.x1, B.x1) > Math.max(A.x0, B.x0),
-          sameBand =
-            ratio(A.h, B.h) <= (single ? 1.25 : 1.6) &&
-            Math.min(A.y1, B.y1) - Math.max(A.y0, B.y0) >= 0.5 * Math.min(A.y1 - A.y0, B.y1 - B.y0) &&
-            Math.max(A.x0, B.x0) - Math.min(A.x1, B.x1) <= (single ? 1 : 3) * Math.max(A.h, B.h);
-        if (stacked || sameBand) {
-          a.push(...b);
-          clusters = clusters.filter((cl) => cl !== b);
-          merged = true;
-          break outer;
-        }
-      }
-  }
+  // Merge clusters pairwise while `join(a, b)` holds for some pair.
+  const mergeWhile = (list, join) => {
+    for (let merged = true; merged; ) {
+      merged = false;
+      outer: for (const a of list)
+        for (const b of list)
+          if (a !== b && join(a, b)) {
+            a.push(...b);
+            list.splice(list.indexOf(b), 1);
+            merged = true;
+            break outer;
+          }
+    }
+    return list;
+  };
 
-  clusters.sort((a, b) => band(a).y0 - band(b).y0 || band(a).x0 - band(b).x0);
-  return groupClusters(components, clusters, nameClusters(clusters));
+  // 1. Words of one line: same band, similar height, up to 3 letter-heights apart (wide spacing,
+  //    separators). Words can differ in median height (ascenders, descenders): looser match.
+  //    Single shapes (e.g. letters split off by colour) rejoin only at nearly the same height and
+  //    letter spacing, so an icon beside the text stays separate.
+  mergeWhile(clusters, (a, b) => {
+    const single = a.length < 2 || b.length < 2,
+      A = band(a),
+      B = band(b);
+    return (
+      ratio(A.h, B.h) <= (single ? 1.25 : 1.6) &&
+      Math.min(A.y1, B.y1) - Math.max(A.y0, B.y0) >= 0.5 * Math.min(A.y1 - A.y0, B.y1 - B.y0) &&
+      Math.max(A.x0, B.x0) - Math.min(A.x1, B.x1) <= (single ? 1 : 3) * Math.max(A.h, B.h)
+    );
+  });
+
+  // 2. Text lines are rows of 3+ shapes sitting side by side; everything else is graphic (symbol
+  //    pieces, icons). Letters rarely overlap horizontally; pieces of a mark are stacked over each other.
+  const stacked = (c, cl) => cl.some((d) => d !== c && -hGap(c, d) >= 0.5 * Math.min(width(c), width(d)));
+  const isText = (cl) => {
+    const b = band(cl);
+    return (
+      cl.length >= 3 &&
+      b.x1 - b.x0 >= 2.5 * b.h &&
+      b.y1 - b.y0 <= 2.2 * b.h &&
+      cl.filter((c) => stacked(c, cl)).length <= 0.25 * cl.length
+    );
+  };
+  const text = clusters.filter(isText),
+    graphic = clusters.filter((cl) => !isText(cl));
+
+  // 3. Stacked text lines of the same size (a two-line wordmark) are one group.
+  mergeWhile(text, (a, b) => {
+    const A = band(a),
+      B = band(b),
+      vgap = Math.max(A.y0, B.y0) - Math.min(A.y1, B.y1);
+    return (
+      ratio(A.h, B.h) <= 1.25 && vgap < Math.max(A.h, B.h) && Math.min(A.x1, B.x1) > Math.max(A.x0, B.x0)
+    );
+  });
+
+  // 4. Graphic pieces that touch or nearly touch form one symbol (multi-colour, multi-piece marks).
+  mergeWhile(graphic, (a, b) => {
+    const A = band(a),
+      B = band(b),
+      dist = Math.max(
+        0,
+        Math.max(A.x0, B.x0) - Math.min(A.x1, B.x1),
+        Math.max(A.y0, B.y0) - Math.min(A.y1, B.y1),
+      );
+    return dist < 0.5 * Math.min(A.y1 - A.y0, B.y1 - B.y0);
+  });
+
+  clusters = [...text, ...graphic].sort((a, b) => band(a).y0 - band(b).y0 || band(a).x0 - band(b).x0);
+  const { names, types } = nameClusters(clusters, new Set(text));
+  return groupClusters(components, clusters, names, types);
 }
 
-// Main wordmark = the multi-shape line with the most area; much shorter lines are taglines;
-// big single shapes are symbols. Everything else stays "Group n".
-function nameClusters(clusters) {
-  const text = clusters.filter((cl) => cl.length > 1),
-    area = (cl) => cl.reduce((s, c) => s + c.pixels, 0),
+// Main wordmark = the text line with the most area; text lines much shorter than it are taglines
+// (vinyl by default); large graphics are symbols. Everything else stays "Group n".
+function nameClusters(clusters, text) {
+  const area = (cl) => cl.reduce((s, c) => s + c.pixels, 0),
     main = [...text].sort((a, b) => area(b) - area(a))[0];
-  if (!main) return [];
+  if (!main) return { names: [], types: undefined };
   const h = band(main).h,
     counts = {};
   const label = (base) => ((counts[base] = (counts[base] || 0) + 1) > 1 ? `${base} ${counts[base]}` : base);
-  return clusters.map((cl) =>
-    cl === main
-      ? 'Main wordmark'
-      : cl.length === 1 && height(cl[0]) >= 0.9 * h
-        ? label('Symbol')
-        : cl.length > 1 && band(cl).h < 0.5 * h
-          ? label('Tagline')
-          : '',
-  );
+  const names = clusters.map((cl) => {
+    const b = band(cl);
+    if (cl === main) return 'Main wordmark';
+    if (!text.has(cl)) return b.y1 - b.y0 >= 0.9 * h ? label('Symbol') : '';
+    return b.h < 0.5 * h ? label('Tagline') : '';
+  });
+  return { names, types: names.map((n) => (n.startsWith('Tagline') ? 'vinyl' : 'front')) };
 }
 
 // Build groups from clusters of components (each component in exactly one cluster).
 // Compare against text-like groups only, so a tall single-shape symbol doesn't make the wordmark "small".
-export function groupClusters(components, clusters, names = []) {
+export function groupClusters(components, clusters, names = [], types) {
   const heights = clusters.map((cl) => median(cl.map(height))),
     text = heights.filter((_, i) => clusters[i].length > 1),
     tallest = Math.max(...(text.length ? text : heights));
   const groups = clusters.map((cl, i) => ({
     id: 'g' + (i + 1),
     name: names[i] || 'Group ' + (i + 1),
-    type: heights[i] < tallest * 0.5 ? 'vinyl' : 'front',
+    type: types?.[i] ?? (heights[i] < tallest * 0.5 ? 'vinyl' : 'front'),
   }));
   const groupOf = new Map();
   clusters.forEach((cl, i) => cl.forEach((c) => groupOf.set(c, groups[i])));

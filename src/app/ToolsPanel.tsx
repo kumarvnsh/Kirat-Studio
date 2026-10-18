@@ -11,7 +11,15 @@ import { readUpload, textArtworkURL } from '../artwork/import.ts';
 import { boardStack, computeLayout, MODULE_W, PSU_LOADING, PSU_W } from '../domain/layout.ts';
 import { bom } from '../domain/bom.ts';
 import { kelvinToHex, LED_TEMPS } from '../domain/lighting.ts';
-import { hasBackup, importImage, importSvg, restoreBackup, retrace, setMode } from './actions.ts';
+import {
+  hasBackup,
+  importImage,
+  importSvg,
+  loadKiratSample,
+  restoreBackup,
+  retrace,
+  setMode,
+} from './actions.ts';
 import {
   editDesign,
   getState,
@@ -112,7 +120,7 @@ function ArtworkPanel() {
         />
       </label>
       <div className="row">
-        <button onClick={() => importImage('kirat-reference.png', true)}>Kirat sample</button>
+        <button onClick={loadKiratSample}>Kirat sample</button>
         <button onClick={() => setShowText(!showText)}>Type text</button>
       </div>
       {showText && (

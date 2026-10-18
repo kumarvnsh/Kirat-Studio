@@ -2,7 +2,8 @@
 // top-level <g> groups in the file become artwork groups. Nothing is rasterised for geometry.
 import * as T from 'three';
 import { SVGLoader } from 'three/addons/loaders/SVGLoader.js';
-import { area, simplify } from './contours.js';
+import { area, maskFromRGBA, simplify, traceMask } from './contours.js';
+import { loadImage } from './import.ts';
 import { attachDetails, autoGroup, groupClusters } from './grouping.js';
 import type { Artwork, ArtworkElement, ArtworkGroup, Point, Region } from '../domain/project.ts';
 
@@ -82,10 +83,11 @@ export function shapesToArtwork(input: SvgShape[]) {
       .includes(c),
   );
 
-  // Use the file's own groups when it has at least two; otherwise group by layout.
+  // Use the file's own groups when it names at least two; otherwise group by layout.
   // Dots attach to letters only within the same file group.
   const key = (c: { svgGroup: string | null }) => c.svgGroup ?? 'Ungrouped',
-    labels = [...new Set(kept.map(key))],
+    named = new Set(kept.map((c) => c.svgGroup).filter(Boolean)),
+    labels = named.size >= 2 ? [...new Set(kept.map(key))] : [],
     components =
       labels.length >= 2
         ? labels.flatMap((l) => attachDetails(kept.filter((c) => key(c) === l)))
@@ -152,22 +154,19 @@ function inlineUses(text: string): string {
 // Browser: parse SVG text into filled shapes, each tagged with its top-level <g>.
 export function parseSvg(text: string): SvgShape[] {
   const data = new SVGLoader().parse(inlineUses(text)),
-    names = new Map<Element, string>(),
     out: SvgShape[] = [];
   const topGroup = (node: Element): string | null => {
     let top: Element | null = null;
     for (let n = node.parentElement; n && n.nodeName !== 'svg'; n = n.parentElement)
       if (n.nodeName === 'g') top = n;
     if (!top) return null;
-    if (!names.has(top))
-      names.set(
-        top,
-        top.getAttribute('inkscape:label') ||
-          top.getAttribute('data-name') ||
-          top.id ||
-          'Group ' + (names.size + 1),
-      );
-    return names.get(top)!;
+    // Only deliberate names count: tools like Canva wrap everything in groups with random hex ids,
+    // and "Layer 1"-style defaults say nothing about the design.
+    const id = top.id,
+      generic = /^[0-9a-f_-]{6,}$/i.test(id) || /^(layer|group|g)[\s_-]*\d*$/i.test(id);
+    return (
+      top.getAttribute('inkscape:label') || top.getAttribute('data-name') || (generic ? null : id || null)
+    );
   };
   for (const path of data.paths) {
     const style = path.userData?.style;
@@ -198,10 +197,70 @@ function renderPNG(elements: ArtworkElement[], w: number, h: number): string {
   return c.toDataURL('image/png');
 }
 
-export function svgArtwork(text: string): { artwork: Artwork; total: number } {
-  const a = shapesToArtwork(parseSvg(text));
+// Raster parts of an SVG (<image>, e.g. a symbol pasted as a picture, or live <text>, which the
+// loader can't read): render only those, with the file's own masks and clips, and trace them.
+// Shapes the loader reads as vectors are hidden for this render. Returns shapes in SVG user units.
+async function tracedRasterParts(text: string): Promise<SvgShape[]> {
+  if (!/<(image|text)\b/i.test(text)) return [];
+  const NS = 'http://www.w3.org/2000/svg',
+    doc = new DOMParser().parseFromString(text, 'image/svg+xml'),
+    svg = doc.documentElement;
+  const vb = (svg.getAttribute('viewBox') || '')
+    .trim()
+    .split(/[\s,]+/)
+    .map(Number);
+  const [vx, vy, vw, vh] =
+    vb.length === 4 && vb.every(Number.isFinite)
+      ? vb
+      : [0, 0, parseFloat(svg.getAttribute('width') || ''), parseFloat(svg.getAttribute('height') || '')];
+  if (!(vw > 0 && vh > 0)) return [];
+  const S = 2000 / Math.max(vw, vh),
+    W = Math.round(vw * S),
+    H = Math.round(vh * S);
+  svg.setAttribute('width', String(W));
+  svg.setAttribute('height', String(H));
+  svg.setAttribute('preserveAspectRatio', 'none');
+  const style = doc.createElementNS(NS, 'style');
+  style.textContent =
+    ':is(path,rect,circle,ellipse,polygon,polyline,line):not(defs *):not(clipPath *):not(mask *):not(pattern *){visibility:hidden}';
+  svg.insertBefore(style, svg.firstChild);
+  const url = URL.createObjectURL(
+    new Blob([new XMLSerializer().serializeToString(doc)], { type: 'image/svg+xml' }),
+  );
+  let img: HTMLImageElement;
+  try {
+    img = await loadImage(url);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+  const c = document.createElement('canvas');
+  c.width = W;
+  c.height = H;
+  const ctx = c.getContext('2d', { willReadFrequently: true })!;
+  ctx.drawImage(img, 0, 0, W, H);
+  const data = ctx.getImageData(0, 0, W, H).data,
+    traced = traceMask(maskFromRGBA(data, W, H, 'white', 45), W, H, {
+      minPixels: 30,
+      tolerance: 0.8,
+      maxComponents: 100,
+      rgba: data as any,
+    });
+  const toUser = (loop: Point[]) => loop.map(([x, y]) => new T.Vector2(vx + x / S, vy + y / S));
+  return traced.components.flatMap((comp: any) =>
+    comp.regions.map((r: Region) => {
+      const shape = new T.Shape(toUser(r.outer));
+      shape.holes = r.holes.map((h) => new T.Path(toUser(h)));
+      return { shape, color: comp.color, group: null };
+    }),
+  );
+}
+
+export async function svgArtwork(text: string): Promise<{ artwork: Artwork; total: number; traced: number }> {
+  const raster = await tracedRasterParts(text),
+    a = shapesToArtwork([...parseSvg(text), ...raster]);
   return {
     total: a.total,
+    traced: raster.length,
     artwork: {
       elements: a.elements,
       groups: a.groups,

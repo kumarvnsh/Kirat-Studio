@@ -1,5 +1,5 @@
 // Operations that span panels: importing artwork, opening/saving projects, mode changes, export.
-import { loadImage, sampleCrop, traceImage } from '../artwork/import.ts';
+import { loadImage, traceImage } from '../artwork/import.ts';
 import { svgArtwork } from '../artwork/svg.ts';
 import type { Artwork } from '../domain/project.ts';
 import { constructionNames, type ConstructionType, type ViewMode } from '../domain/project.ts';
@@ -19,10 +19,10 @@ let source: { image: HTMLImageElement } | { svg: string } | null = null;
 const fullCrop = { x: 0, y: 0, w: 100, h: 100 };
 const reportError = (e: unknown) => say(e instanceof Error ? e.message : String(e));
 
-export async function importImage(url: string, sample = false) {
+export async function importImage(url: string) {
   try {
     source = { image: await loadImage(url) };
-    setTrace({ crop: sample ? sampleCrop : fullCrop, background: 'white', threshold: 45 });
+    setTrace({ crop: fullCrop, background: 'white', threshold: 45 });
     retrace();
   } catch (e) {
     reportError(e);
@@ -35,7 +35,7 @@ export function importSvg(text: string) {
 }
 
 // Re-importing replaces the artwork as one undoable design edit.
-export function retrace() {
+export async function retrace() {
   if (!source) {
     const vector = getState().design.present.artwork?.origin === 'vector';
     return say(
@@ -47,9 +47,12 @@ export function retrace() {
   try {
     let artwork: Artwork, note: string;
     if ('svg' in source) {
-      const r = svgArtwork(source.svg);
+      const r = await svgArtwork(source.svg);
       artwork = r.artwork;
       note =
+        (r.traced
+          ? `${r.traced} part(s) of this SVG are embedded pictures or text, traced from pixels; everything else is exact vector outlines. `
+          : '') +
         `Vector artwork: exact outlines from the SVG${r.total > artwork.elements.length ? ` (${r.total} shapes, smallest merged or capped at 100)` : ''}. ` +
         (artwork.groups.some((g) => !/^Group \d+$/.test(g.name))
           ? 'Groups come from the file. '
@@ -202,7 +205,7 @@ export function startSession() {
       }
     }, 400);
   });
-  const sample = () => importImage('kirat-reference.png', true);
+  const sample = loadKiratSample;
   if (previous) openProject(previous, 'Last session restored from autosave.').catch(sample);
   else sample();
 }
@@ -286,4 +289,13 @@ export async function exportPresentation() {
   );
   download(c.toDataURL('image/png'), 'kirat-presentation.png');
   say('Presentation sheet exported: day and night views from the current camera.');
+}
+
+// The Kirat Creations logo shipped with the app (Canva SVG: vector letters, picture symbol).
+export async function loadKiratSample() {
+  try {
+    importSvg(await (await fetch('kirat-logo.svg')).text());
+  } catch (e) {
+    reportError(e);
+  }
 }

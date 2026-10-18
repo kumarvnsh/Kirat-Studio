@@ -31,7 +31,7 @@ Requires Node 20+.
 | `src/editor/history.ts` | Immutable undo/redo over designs |
 | `src/storage/project.ts` | Project file format v4, v1–v3 migration, validation, browser autosave |
 | `src/scene/scene.ts` | Three.js display of the layout (mm → m); HDR pipeline via pmndrs/postprocessing: exposure → bloom → AgX tone mapping; PBR finishes; stills |
-| `public/` | Static assets served at `/` (Kirat sample logo, not yet added) |
+| `public/` | Static assets served at `/`: `kirat-logo.svg`, the Kirat Creations sample (Canva export) |
 | `tests/` | `node --test` checks (`.js` and `.ts`; Node 22 strips types natively) |
 | `reference/prototype/` | Byte-exact copy of the original ChatGPT-hosted prototype (v02). Do not edit. |
 
@@ -48,7 +48,7 @@ Further folders from the roadmap (`catalog/`, `digital/`) get created when their
 
 ## Status
 
-Milestones A and B done (Kirat group naming waits for `public/kirat-reference.png`). Milestone C done:
+Milestones A and B done. Milestone C done:
 
 - Dimensioned board stack (GI, MS frame, optional backing sheet, ACP) with z positions and frame members.
 - Recipes, editable per artwork group in the inspector: front-lit (optional trim cap), halo-lit, front + halo, full acrylic, flat acrylic / metal / ACP, vinyl. Changing a group's construction resets its params.

@@ -208,3 +208,63 @@ test('a lowercase tagline with ascenders, descenders and separators stays one gr
   const { groups } = autoGroup(comps);
   assert.deepEqual(groups.map((g) => g.name).sort(), ['Main wordmark', 'Tagline']);
 });
+
+// Fixture modelled on the real Kirat Creations logo (1125 × 404 px JPEG): a four-colour symbol of
+// 4 petals + 4 inner arcs in a ring, the orange wordmark, and a dark tagline with "|" separators.
+function kiratReal() {
+  const c = (b, color) => ({ ...b, color });
+  const green = '#50ac55',
+    blue = '#3092c8',
+    yellow = '#f1c246',
+    orange = '#f9b05a',
+    grey = '#7b7e82';
+  const comps = [
+    c(box('petalTop', 125, 30, 300, 114), green),
+    c(box('petalBottom', 125, 266, 300, 350), yellow),
+    c(box('petalLeft', 50, 103, 134, 278), blue),
+    c(box('petalRight', 291, 103, 375, 278), blue),
+    c(box('arcTop', 153, 120, 271, 172), green),
+    c(box('arcBottom', 153, 208, 271, 260), yellow),
+    c(box('arcLeft', 140, 131, 192, 249), blue),
+    c(box('arcRight', 233, 131, 285, 249), blue),
+  ];
+  let x = 420;
+  'Kirat Creations'.split('').forEach((ch, i) => {
+    if (ch === ' ') return void (x += 20);
+    const tall = 'KtCi'.includes(ch),
+      w = ch === 'i' ? 14 : 38;
+    comps.push(c(box('w' + i, x, tall ? 150 : 166, x + w, 210), orange));
+    if (ch === 'i') comps.push(c(box('wdot' + i, x, 140, x + 14, 152), orange));
+    x += w + 5;
+  });
+  x = 415;
+  'Signage | Graphics | Display Units | Turnkey Solutions'.split('').forEach((ch, i) => {
+    if (ch === ' ') return void (x += 6);
+    if (ch === '|') comps.push(c(box('bar' + i, x, 243, x + 2, 270), grey)), (x += 8);
+    else comps.push(c(box('t' + i, x, 250, x + 12, 268), grey)), (x += 15);
+  });
+  return comps;
+}
+
+test('real Kirat layout: the multi-piece symbol is one group; wordmark and tagline are named right', () => {
+  const { components, groups } = autoGroup(attachDetails(kiratReal()));
+  const name = (id) => groups.find((g) => g.id === components.find((c) => c.id === id).group).name;
+  assert.deepEqual(groups.map((g) => g.name).sort(), ['Main wordmark', 'Symbol', 'Tagline']);
+  for (const p of [
+    'petalTop',
+    'petalBottom',
+    'petalLeft',
+    'petalRight',
+    'arcTop',
+    'arcBottom',
+    'arcLeft',
+    'arcRight',
+  ])
+    assert.equal(name(p), 'Symbol', p);
+  assert.equal(name('w0'), 'Main wordmark');
+  assert.equal(name('t0'), 'Tagline');
+  assert.equal(name('bar8'), 'Tagline', 'separators belong to the tagline');
+  assert.equal(groups.find((g) => g.name === 'Symbol').type, 'front');
+  assert.equal(groups.find((g) => g.name === 'Main wordmark').type, 'front');
+  assert.equal(groups.find((g) => g.name === 'Tagline').type, 'vinyl');
+});
