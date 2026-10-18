@@ -202,10 +202,10 @@ export class SignScene {
     this.composer.addPass(new RenderPass(this.scene, this.camera));
     this.bloom = new BloomEffect({
       luminanceThreshold: BLOOM_THRESHOLD,
-      luminanceSmoothing: 0.4,
+      luminanceSmoothing: 0.2,
       mipmapBlur: true,
-      intensity: 0.8,
-      radius: 0.55,
+      intensity: 0.25,
+      radius: 0.25,
     });
     // Exposure first, in its own pass: bloom samples the pass input, not earlier effects in the same pass.
     this.composer.addPass(new EffectPass(this.camera, this.exposure));
@@ -494,35 +494,10 @@ export class SignScene {
       for (const p of e.parts) this.buildPart(s, e, p, regions, mesh, lit);
     }
 
-    // Soft spill from lit letters onto the fascia: one light per fifth of the board width.
-    // Same intensity day or night; by day the sun simply swamps it.
-    if (s.mode !== 'bend') {
-      const bins = new Map<number, ElementLayout>();
-      for (const e of L.elements.filter((e) => e.light?.on)) {
-        const x = (e.bounds[0] + e.bounds[2]) / 2,
-          bin = Math.round(((x * M + W / 2) / W) * 5);
-        if (!bins.has(bin)) bins.set(bin, e);
-      }
-      for (const e of bins.values()) {
-        const top = Math.max(...e.parts.map((p) => p.z1)) * M,
-          light = new T.PointLight(
-            e.light!.color,
-            lit ? 0.3 * emission(true, s.dimming * e.light!.dimming) : 0,
-            Math.max(0.7, H * 1.3),
-            2,
-          );
-        light.position.set(
-          ((e.bounds[0] + e.bounds[2]) / 2) * M,
-          ((e.bounds[1] + e.bounds[3]) / 2) * M,
-          top + 0.16,
-        );
-        this.layers.get('leds')!.add(light);
-        this.lightUpdaters.push((cur) => {
-          light.intensity =
-            cur.lights !== false ? 0.3 * emission(true, cur.dimming * e.light!.dimming) : 0;
-        });
-      }
-    }
+    // Front-lit faces emit through their acrylic. Do not approximate that with
+    // unoccluded point lights in front of the sign: they create camera-facing
+    // specular hotspots and illuminate unrelated vinyl/metal surfaces.
+    // Rear-lit constructions get contour-shaped fascia spill in haloGlow().
     this.buildPower(s);
     this.setEnvironment(s);
     this.setVisibility(s);

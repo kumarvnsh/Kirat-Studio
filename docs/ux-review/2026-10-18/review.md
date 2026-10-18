@@ -108,3 +108,10 @@ The browser raster check used generated text; external raster file upload, brows
 - [Construction references](implemented/construction-chooser.jpg)
 
 Local integration: fast-forwarded the original main checkout, re-ran all 88 tests and typecheck, then verified localhost:5173 renders the new studio and restores its existing browser autosave. [Original local URL screenshot](implemented/local-5173.jpg).
+
+
+## Lighting correction
+
+User-reported night-preview hotspots reproduced in the local renderer. Cause: five-bin point lights positioned in front of letters, with no occlusion, created concentrated specular reflections on glossy acrylic and lit unrelated surfaces. Removed those fake light sources; actual emissive faces, LED modules and contour-shaped rear halo remain. Reduced bloom intensity from 0.8 to 0.25 and radius from 0.55 to 0.25 to retain readable contours. Three.js documents emissive light as independent of scene lighting and clearcoat as a reflective surface layer: [MeshStandardMaterial](https://threejs.org/docs/pages/MeshStandardMaterial.html), [MeshPhysicalMaterial](https://threejs.org/docs/pages/MeshPhysicalMaterial.html).
+
+Visual regression checked after renderer recreation at the same Night/power-on state: [before](implemented/lighting-before.jpg), [after](implemented/lighting-after.jpg). Also checked [power off](implemented/lighting-off.jpg) and [daylight](implemented/lighting-day.jpg). Browser console contained no errors. All 88 tests, typecheck, build and diff checks passed. This corrects the artificial hotspot approximation; measured optical calibration still requires real sample photographs/material measurements.
