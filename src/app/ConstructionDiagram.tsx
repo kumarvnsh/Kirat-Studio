@@ -1,4 +1,5 @@
 import { useId } from 'react';
+import { ConstructionReference } from './ConstructionReference.tsx';
 import { boardStack } from '../domain/layout.ts';
 import type { ConstructionType, DesignSettings } from '../domain/project.ts';
 import { frontLit, haloLit, recipes, VINYL_THICKNESS } from '../domain/recipes.ts';
@@ -329,7 +330,7 @@ export function ConstructionPicker({
               onClick={() => onChange(m.type)}
               title={`${recipes[m.type].name}: ${m.howItWorks}`}
             >
-              <Letter3DReferenceThumb type={m.type} />
+              <ConstructionReference type={m.type} fallback={<Letter3DReferenceThumb type={m.type} />} />
               <div className="c-card-body">
                 <div className="c-card-top">
                   <b>{m.title}</b>

@@ -1,4 +1,4 @@
-import { useEffect, useState, type KeyboardEvent, type PointerEvent } from 'react';
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
 import {
   formatAllUnits,
   LENGTH_UNITS,
@@ -7,6 +7,7 @@ import {
   unitToMm,
   type LengthUnit,
 } from '../domain/units.ts';
+import { numericDraft } from './numericDraft.ts';
 import { say, setView, useView } from './store.ts';
 
 export function UnitSelector({ compact = false }: { compact?: boolean }) {
@@ -22,7 +23,7 @@ export function UnitSelector({ compact = false }: { compact?: boolean }) {
           title={`Display and edit dimensions in ${u.label} (${u.short})`}
           onClick={() => {
             setView({ unit: u.id });
-            say(`Measurement unit switched to ${u.label} (${u.short}). All 3 units (mm · in · ft) shown live.`);
+            say(`Measurement unit switched to ${u.label} (${u.short}). Dimensions remain stored in millimetres.`);
           }}
         >
           {u.label}
@@ -56,7 +57,11 @@ export function ScrubInput({
   const activeLengthUnit: LengthUnit = useView().unit ?? 'mm';
   const isLength = unit === 'mm';
   const displayUnit = isLength ? activeLengthUnit : unit;
-  const showMulti = showAllUnits ?? isLength;
+  const showMulti = showAllUnits ?? false;
+  const errorId = useId();
+  const detailsId = useId();
+  const cancelled = useRef(false);
+  const [error, setError] = useState<string | null>(null);
 
   const toDisp = (mm: number) => (isLength ? mmToUnit(mm, activeLengthUnit) : mm);
   const toMm = (disp: number) => (isLength ? unitToMm(disp, activeLengthUnit) : disp);
@@ -69,10 +74,10 @@ export function ScrubInput({
   const [scrubbing, setScrubbing] = useState(false);
 
   useEffect(() => {
-    if (!focused) {
+    if (!focused && !error) {
       setText(String(toDisp(value)));
     }
-  }, [value, activeLengthUnit, focused]);
+  }, [value, activeLengthUnit, focused, error]);
 
   const roundMmStep = (mmVal: number) => {
     const decimals = (String(step).split('.')[1] ?? '').length;
@@ -89,6 +94,7 @@ export function ScrubInput({
     const startVal = value;
     const span = max - min;
     const pxPerStep = span > 1000 ? 0.25 : span > 150 ? 1.2 : 3;
+    setError(null);
     setScrubbing(true);
 
     const onMove = (moveEv: globalThis.PointerEvent) => {
@@ -111,37 +117,28 @@ export function ScrubInput({
 
   const handleInput = (raw: string) => {
     setText(raw);
-    const num = Number(raw);
-    if (raw.trim() !== '' && Number.isFinite(num)) {
-      const mmVal = roundMmStep(toMm(num));
-      if (toMm(num) >= min && toMm(num) <= max) {
-        onChange(mmVal, true);
-      }
-    }
+    setError(null);
   };
 
   const handleBlur = () => {
     setFocused(false);
-    const num = Number(text);
-    if (text.trim() === '' || !Number.isFinite(num)) {
-      onInvalid?.(num);
-      setText(String(toDisp(value)));
+    if (cancelled.current) { cancelled.current = false; return; }
+    const draft = numericDraft(text, min, max, toMm);
+    if (!draft.ok) {
+      setError(Number.isFinite(Number(text)) && text.trim() ? `Enter a value between ${dispMin} and ${dispMax} ${displayUnit}.` : draft.error);
+      onInvalid?.(toMm(Number(text)));
       return;
     }
-    const rawMm = toMm(num);
-    const clampedMm = roundMmStep(rawMm);
-    if (rawMm < min || rawMm > max) {
-      onInvalid?.(rawMm);
-    }
-    setText(String(toDisp(clampedMm)));
-    if (clampedMm !== value) {
-      onChange(clampedMm, false);
-    }
+    setError(null);
+    setText(String(toDisp(draft.value)));
+    if (draft.value !== value) onChange(draft.value, false);
   };
 
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') e.currentTarget.blur();
     if (e.key === 'Escape') {
+      cancelled.current = true;
+      setError(null);
       setText(String(toDisp(value)));
       e.currentTarget.blur();
     }
@@ -161,7 +158,10 @@ export function ScrubInput({
       </span>
       <div className="scrub-input-wrap">
         <input
-          type="number"
+          type="text"
+          inputMode="decimal"
+          aria-invalid={!!error}
+          aria-describedby={[error ? errorId : null, isLength ? detailsId : null].filter(Boolean).join(' ') || undefined}
           min={dispMin}
           max={dispMax}
           step={dispStep}
@@ -173,8 +173,10 @@ export function ScrubInput({
         />
         {displayUnit && <small className="scrub-unit">{displayUnit}</small>}
       </div>
+      {error && <small id={errorId} className="scrub-error" role="alert">{error}</small>}
+      {isLength && !showMulti && <small id={detailsId} className="scrub-unit-details" hidden>{formatAllUnits(value)}</small>}
       {showMulti && (
-        <small className="scrub-all-units" title="Equivalent values in mm, inch, and foot">
+        <small id={detailsId} className="scrub-all-units" title="Equivalent values in mm, inch, and foot">
           {formatAllUnits(value)}
         </small>
       )}
