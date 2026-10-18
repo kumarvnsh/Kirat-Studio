@@ -179,3 +179,60 @@ test('bom includes studs, trim cap and power rows', async () => {
   assert.ok(item('LED power supply')!.qty >= 1);
   assert.equal(item('Cable penetrations')!.qty, 1);
 });
+
+test('character height, width, depth, letter spacing, and group spacing adjust 3D layout', () => {
+  const d: DesignState = {
+    settings: { ...defaultSettings(), groupSpacing: 150 },
+    artwork: {
+      elements: [
+        { ...square('a', 0, 'front', 'g1'), charHeight: 300, charWidth: 240, charDepth: 95 },
+        { ...square('b', 120, 'front', 'g1') },
+        { ...square('c', 0, 'halo', 'g2') },
+      ],
+      groups: [
+        { id: 'g1', name: 'Row 1', type: 'front', letterSpacing: 80, charHeight: 250, charWidth: 200 },
+        { id: 'g2', name: 'Row 2', type: 'halo' },
+      ],
+      bounds: [0, 0, 220, 100],
+      imageWidth: 220,
+      imageHeight: 100,
+      imageData: 'data:image/png;base64,',
+      approved: false,
+    },
+  };
+  const L = computeLayout(d);
+  const LBase = computeLayout({
+    ...d,
+    artwork: {
+      ...d.artwork!,
+      groups: d.artwork!.groups.map((g) => (g.id === 'g1' ? { ...g, letterSpacing: 0 } : g)),
+    },
+  });
+  const [ea, eb] = L.elements;
+  const [ea0, eb0] = LBase.elements;
+  assert.equal(Math.round(ea.bounds[2] - ea.bounds[0]), 240);
+  assert.equal(Math.round(ea.bounds[3] - ea.bounds[1]), 300);
+  assert.equal(Math.round(eb.bounds[2] - eb.bounds[0]), 200);
+  assert.equal(Math.round(eb.bounds[3] - eb.bounds[1]), 250);
+  const gapWith = eb.bounds[0] - ea.bounds[2];
+  const gapWithout = eb0.bounds[0] - ea0.bounds[2];
+  assert.equal(Math.round(gapWith - gapWithout), 80);
+  const aReturns = ea.parts.find((p) => p.kind === 'returns')!;
+  assert.equal(aReturns.z1 - aReturns.z0, 95);
+  assert.equal(L.boardGroupGap, 150);
+});
+
+test('default view starts in Day mode with Lights Off and mm units; units convert between mm, inch, and foot', async () => {
+  const { defaultView } = await import('../src/domain/project.ts');
+  const { mmToUnit, unitToMm, formatAllUnits } = await import('../src/domain/units.ts');
+  const v = defaultView();
+  assert.equal(v.environment, 'day');
+  assert.equal(v.lights, false);
+  assert.equal(v.unit, 'mm');
+  assert.equal(mmToUnit(25.4, 'in'), 1);
+  assert.equal(mmToUnit(304.8, 'ft'), 1);
+  assert.equal(unitToMm(10, 'in'), 254);
+  assert.equal(unitToMm(2, 'ft'), 609.6);
+  assert.match(formatAllUnits(304.8), /304\.8 mm · 12 in · 1 ft/);
+});
+

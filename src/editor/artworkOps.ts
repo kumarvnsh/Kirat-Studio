@@ -65,6 +65,12 @@ export type GroupPatch = {
   returnColor?: string | null;
   params?: Record<string, number>;
   light?: GroupLight | null; // merged into the group's light; null resets to board defaults
+  charHeight?: number | null;
+  charWidth?: number | null;
+  charDepth?: number | null;
+  letterSpacing?: number | null;
+  groupGap?: number | null;
+  applyToOverrides?: boolean;
 };
 
 // Returns an error message for out-of-range light settings, or null.
@@ -101,16 +107,28 @@ export function setGroup(a: Artwork, id: string, patch: GroupPatch): Artwork {
       if (!HEX.test(patch[k]!)) throw Error('Colours are #rrggbb.');
       g[k] = patch[k]!;
     }
+  for (const k of ['charHeight', 'charWidth', 'charDepth', 'letterSpacing', 'groupGap'] as const) {
+    if (patch[k] === null) delete g[k];
+    else if (typeof patch[k] === 'number' && Number.isFinite(patch[k])) g[k] = patch[k];
+  }
   return {
     ...a,
     groups: a.groups.map((x) => (x.id === id ? g : x)),
-    elements: a.elements.map((e) => (e.group === id && !e.override ? { ...e, type: g.type } : e)),
+    elements: a.elements.map((e) =>
+      e.group === id && (!e.override || patch.applyToOverrides)
+        ? { ...e, type: g.type, override: false }
+        : e,
+    ),
   };
 }
 
 export type ElementPatch = {
   type?: ConstructionType | 'inherit'; // inherit = follow the group
   faceColor?: string | null;
+  charHeight?: number | null;
+  charWidth?: number | null;
+  charDepth?: number | null;
+  letterSpacing?: number | null;
 };
 
 export function setElements(a: Artwork, ids: string[], patch: ElementPatch): Artwork {
@@ -126,6 +144,10 @@ export function setElements(a: Artwork, ids: string[], patch: ElementPatch): Art
       else if (patch.type) Object.assign(out, { type: patch.type, override: patch.type !== group.type });
       if (patch.faceColor === null) delete out.faceColor;
       else if (patch.faceColor) out.faceColor = patch.faceColor;
+      for (const k of ['charHeight', 'charWidth', 'charDepth', 'letterSpacing'] as const) {
+        if (patch[k] === null) delete out[k];
+        else if (typeof patch[k] === 'number' && Number.isFinite(patch[k])) out[k] = patch[k];
+      }
       return out;
     }),
   };

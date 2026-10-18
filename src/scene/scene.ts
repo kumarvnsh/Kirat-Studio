@@ -145,7 +145,7 @@ export class SignScene {
   onSelect: (id: string | null, add: boolean, doubleClick?: boolean) => void;
   renderer: T.WebGLRenderer;
   scene = new T.Scene();
-  camera = new T.PerspectiveCamera(35, 1, 0.01, 100);
+  camera = new T.PerspectiveCamera(35, 1, 0.05, 35);
   controls: OrbitControls;
   hemi = new T.HemisphereLight(0xc9e5f0, 0x5d6253, 2);
   sun = new T.DirectionalLight(0xfff0d6, 3);
@@ -163,12 +163,13 @@ export class SignScene {
   wall: T.Mesh | null = null;
   lightUpdaters: ((s: SceneInput) => void)[] = [];
   lastSize: [number, number] = [0, 0];
+  dirty = true;
 
   constructor(host: HTMLElement, onSelect: (id: string | null, add: boolean, doubleClick?: boolean) => void) {
     this.host = host;
     this.onSelect = onSelect;
     // Antialiasing comes from the composer's multisampling; tone mapping from the effect chain.
-    this.renderer = new T.WebGLRenderer({ antialias: false, preserveDrawingBuffer: true });
+    this.renderer = new T.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = T.PCFSoftShadowMap;
@@ -176,6 +177,7 @@ export class SignScene {
     host.append(this.renderer.domElement);
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
+    this.controls.dampingFactor = 0.08;
     this.controls.minDistance = 0.2;
     this.controls.maxDistance = 30;
     this.controls.addEventListener('change', () => this.draw());
@@ -184,8 +186,8 @@ export class SignScene {
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(2048, 2048);
     Object.assign(this.sun.shadow.camera, { left: -8, right: 8, top: 5, bottom: -5, near: 0.1, far: 20 });
-    this.sun.shadow.bias = -0.00015;
-    this.sun.shadow.normalBias = 0.003;
+    this.sun.shadow.bias = -0.0002;
+    this.sun.shadow.normalBias = 0.002;
     this.scene.add(this.sun);
     this.fill.position.set(4, 1, 2);
     this.scene.add(this.fill);
@@ -199,7 +201,7 @@ export class SignScene {
     this.composer.addPass(new RenderPass(this.scene, this.camera));
     this.bloom = new BloomEffect({
       luminanceThreshold: BLOOM_THRESHOLD,
-      luminanceSmoothing: 0.25,
+      luminanceSmoothing: 0.4,
       mipmapBlur: true,
       intensity: 0.8,
       radius: 0.55,
@@ -211,6 +213,7 @@ export class SignScene {
     );
     this.scene.add(this.group);
     const ray = new T.Raycaster();
+    const pickableLayers: LayerId[] = ['faces', 'returns', 'backs', 'mounting'];
     const pickPart = (clientX: number, clientY: number) => {
       const r = this.renderer.domElement.getBoundingClientRect();
       if (!r.width || !r.height) return undefined;
@@ -218,11 +221,17 @@ export class SignScene {
         new T.Vector2(((clientX - r.left) / r.width) * 2 - 1, (-(clientY - r.top) / r.height) * 2 + 1),
         this.camera,
       );
+      const targets: T.Object3D[] = [];
+      for (const id of pickableLayers) {
+        const g = this.layers.get(id);
+        if (g?.visible) targets.push(g);
+      }
       return ray
-        .intersectObjects(this.group.children, true)
+        .intersectObjects(targets, true)
         .find((h) => h.object.userData.part && h.object.visible && h.object.parent?.visible);
     };
     let down: [number, number] | null = null;
+    let lastHoverPick = 0;
     this.renderer.domElement.addEventListener('pointerdown', (e) => {
       down = [e.clientX, e.clientY];
       this.renderer.domElement.style.cursor = 'grabbing';
@@ -232,6 +241,9 @@ export class SignScene {
         this.renderer.domElement.style.cursor = 'grabbing';
         return;
       }
+      const now = performance.now();
+      if (now - lastHoverPick < 40) return;
+      lastHoverPick = now;
       const hit = pickPart(e.clientX, e.clientY);
       this.renderer.domElement.style.cursor = hit ? 'pointer' : 'grab';
     });
@@ -256,7 +268,11 @@ export class SignScene {
     this.resize(true);
     const loop = () => {
       requestAnimationFrame(loop);
-      this.controls.update();
+      const moved = this.controls.update();
+      if (moved || this.dirty) {
+        this.dirty = false;
+        this.composer.render();
+      }
     };
     loop();
   }
@@ -271,10 +287,15 @@ export class SignScene {
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(w, h, false);
     this.composer.setSize(w, h);
-    this.draw();
+    this.renderNow();
   }
 
   draw() {
+    this.dirty = true;
+  }
+
+  private renderNow() {
+    this.dirty = false;
     this.composer.render();
   }
 
@@ -315,9 +336,25 @@ export class SignScene {
       new T.MeshPhysicalMaterial({ side: T.FrontSide, ...o });
     switch (kind) {
       case 'acp': // PVDF-coated panel: painted, light clearcoat
-        return P({ color, metalness: 0.05, roughness: 0.42, clearcoat: 0.55, clearcoatRoughness: 0.28 });
+        return P({
+          color,
+          metalness: 0.05,
+          roughness: 0.42,
+          clearcoat: 0.55,
+          clearcoatRoughness: 0.28,
+          polygonOffset: true,
+          polygonOffsetFactor: 1,
+          polygonOffsetUnits: 2,
+        });
       case 'gi':
-        return P({ color: '#a9b2b5', metalness: 1, roughness: 0.48 });
+        return P({
+          color: '#a9b2b5',
+          metalness: 1,
+          roughness: 0.48,
+          polygonOffset: true,
+          polygonOffsetFactor: 1,
+          polygonOffsetUnits: 1,
+        });
       case 'frame': // primed MS
         return P({ color: '#3d4347', metalness: 0.35, roughness: 0.6 });
       case 'aluminium':
@@ -327,11 +364,25 @@ export class SignScene {
       case 'painted': // powder-coated / painted metal
         return P({ color, metalness: 0.2, roughness: 0.38, clearcoat: 0.3, clearcoatRoughness: 0.3 });
       case 'acrylic': // glossy cast acrylic surface
-        return P({ color, metalness: 0, roughness: 0.22, clearcoat: 1, clearcoatRoughness: 0.04 });
+        return P({ color, metalness: 0, roughness: 0.22, clearcoat: 1, clearcoatRoughness: 0.14 });
       case 'trim':
-        return P({ color: '#2f3336', metalness: 0, roughness: 0.5 });
+        return P({
+          color: '#2f3336',
+          metalness: 0,
+          roughness: 0.5,
+          polygonOffset: true,
+          polygonOffsetFactor: -1,
+          polygonOffsetUnits: -2,
+        });
       case 'vinyl':
-        return P({ color, metalness: 0, roughness: 0.62 });
+        return P({
+          color,
+          metalness: 0,
+          roughness: 0.62,
+          polygonOffset: true,
+          polygonOffsetFactor: -2,
+          polygonOffsetUnits: -4,
+        });
       case 'paint':
         return P({ color, metalness: 0, roughness: 0.95 });
     }
@@ -359,21 +410,29 @@ export class SignScene {
       layer: LayerId,
       z: number,
       part: string | null = null,
+      castShadow = true,
+      receiveShadow = true,
     ) => {
       const m = new T.Mesh(geometry, material);
       m.position.z = z;
-      m.castShadow = true;
-      m.receiveShadow = true;
+      m.castShadow = castShadow;
+      m.receiveShadow = receiveShadow;
       m.userData.part = part;
       this.layers.get(layer)!.add(m);
       return m;
     };
 
     // Board: sheets as boxes, frame as hollow tubes.
+    // Small visual z-offsets separate gi/backing/acp from the steel frame tubes to prevent coplanar z-fighting.
     const sheetColour: Partial<Record<LayerId, T.Material>> = {
       gi: this.finish('gi'),
       backing: this.finish('aluminium', '#b4bbbe'),
       acp: this.finish('acp', st.boardcolor),
+    };
+    const sheetZBias: Partial<Record<LayerId, number>> = {
+      gi: -0.0005,
+      backing: 0.0003,
+      acp: 0.0006,
     };
     for (const b of L.board) {
       if (b.layer === 'frame') continue;
@@ -381,7 +440,7 @@ export class SignScene {
         new T.BoxGeometry(W, H, (b.z1 - b.z0) * M),
         sheetColour[b.layer]!,
         b.layer,
-        ((b.z0 + b.z1) / 2) * M,
+        ((b.z0 + b.z1) / 2) * M + (sheetZBias[b.layer] ?? 0),
       );
     }
     const F = st.frame * M,
@@ -475,18 +534,40 @@ export class SignScene {
     e: ElementLayout,
     p: LetterPart,
     regions: Region[],
-    mesh: (g: T.BufferGeometry, m: T.Material, l: LayerId, z: number, part?: string | null) => T.Mesh,
+    mesh: (
+      g: T.BufferGeometry,
+      m: T.Material,
+      l: LayerId,
+      z: number,
+      part?: string | null,
+      castShadow?: boolean,
+      receiveShadow?: boolean,
+    ) => T.Mesh,
     lit: boolean,
   ) {
     const st = s.settings,
       L = s.layout,
-      depth = (p.z1 - p.z0) * M,
-      z0 = p.z0 * M,
+      rawDepth = (p.z1 - p.z0) * M,
+      // Lift letter parts 1mm above the board fascia and step stacked seams by 0.2mm to eliminate z-fighting.
+      partZBias =
+        p.kind === 'back'
+          ? 0.001
+          : p.kind === 'returns'
+            ? 0.0012
+            : p.kind === 'face'
+              ? 0.0014
+              : p.kind === 'trim'
+                ? 0.0016
+                : e.type === 'vinyl'
+                  ? 0.0015
+                  : 0.0012,
+      z0 = p.z0 * M + partZBias,
+      depth = e.type === 'vinyl' ? Math.max(rawDepth, 0.0008) : rawDepth,
       shapes = regions.map(shapeFromRegion);
     // Face colour: the letter's/group's chosen colour, else the artwork's own colours, else the default.
     const art = !e.faceColor && st.keepart && this.texture,
       base = e.faceColor ?? (art ? '#ffffff' : st.facecolor);
-    const extrude = (mat: T.Material, textured: boolean) => {
+    const extrude = (mat: T.Material, textured: boolean, castShadow = true) => {
       const g = new T.ExtrudeGeometry(shapes, {
         depth,
         bevelEnabled: textured && depth >= 0.001,
@@ -496,17 +577,23 @@ export class SignScene {
         curveSegments: 8,
       });
       if (textured && art) {
-        // Map back to traced-image pixels so faces show the original artwork colours.
+        // Map back to traced-image pixels so faces show the original artwork colours even when scaled/spaced.
         const pos = g.attributes.position,
-          uv = g.attributes.uv;
+          uv = g.attributes.uv,
+          [x0, y0, x1, y1] = e.bounds,
+          [px0, py0, px1, py1] = e.pixelBounds ?? [0, 0, s.imageWidth, s.imageHeight],
+          bw = Math.max(1e-6, x1 - x0),
+          bh = Math.max(1e-6, y1 - y0);
         for (let i = 0; i < pos.count; i++) {
-          const px = pos.getX(i) / M / L.scale + L.cx,
-            py = L.cy - pos.getY(i) / M / L.scale;
+          const xm = pos.getX(i) / M,
+            ym = pos.getY(i) / M,
+            px = e.pixelBounds ? px0 + ((xm - x0) / bw) * (px1 - px0) : xm / L.scale + L.cx,
+            py = e.pixelBounds ? py0 + ((y1 - ym) / bh) * (py1 - py0) : L.cy - ym / L.scale;
           uv.setXY(i, px / s.imageWidth, 1 - py / s.imageHeight);
         }
         uv.needsUpdate = true;
       }
-      return mesh(g, mat, p.layer, z0, e.id);
+      return mesh(g, mat, p.layer, z0, e.id, castShadow, true);
     };
     // Each group is its own circuit: master power x group on/off, master dimming x group dimming.
     // In "artwork" mode RGB LEDs reproduce the letter's own colours, so the artwork drives the emission.
@@ -543,23 +630,27 @@ export class SignScene {
             mesh(new T.ExtrudeGeometry(ss, { depth, bevelEnabled: false }), mat, p.layer, z0, e.id);
         }
     };
-    const pins = (radius: number, mat: T.Material) => {
+    const pins = (radius: number, mat: T.Material, castShadow = true) => {
       for (const [x, y] of e.fixings) {
         const g = new T.CylinderGeometry(radius, radius, depth, 12);
         g.rotateX(Math.PI / 2);
-        mesh(g, mat, 'mounting', z0 + depth / 2, e.id).position.set(x * M, y * M, z0 + depth / 2);
+        mesh(g, mat, 'mounting', z0 + depth / 2, e.id, castShadow, castShadow).position.set(
+          x * M,
+          y * M,
+          z0 + depth / 2,
+        );
       }
     };
 
-    if (p.kind === 'stud') pins(0.0025, this.material('#8d969a', 0.9, 0.35));
-    else if (p.kind === 'standoff') pins(0.006, this.material('#b9c2c4', 0.9, 0.3));
+    if (p.kind === 'stud') pins(0.0025, this.material('#8d969a', 0.9, 0.35), false);
+    else if (p.kind === 'standoff') pins(0.006, this.material('#b9c2c4', 0.9, 0.3), true);
     else if (p.kind === 'back') {
       const mat = haloLit(e.type)
         ? new T.MeshStandardMaterial({ color: '#dfe8ea', roughness: 0.1, transparent: true, opacity: 0.45 })
         : this.material('#75878c', 0.05, 0.8);
       extrude(mat, false);
       if (haloLit(e.type))
-        this.haloGlow(regions, L.letterBase * M + 0.0001, e.id, mesh, light?.color ?? ledColour, glow, glowOf);
+        this.haloGlow(regions, L.letterBase * M + 0.0015, e.id, mesh, light?.color ?? ledColour, glow, glowOf);
     } else if (p.kind === 'leds') {
       const body = this.material('#e7eee4', 0, 0.4),
         lens = this.material('#fff5cc', 0, 0.2);
@@ -575,8 +666,10 @@ export class SignScene {
           'leds',
           z0 + (LED_SIZE.d * M) / 2,
           e.id,
+          false,
+          false,
         ).position.set(x * M, y * M, z0 + (LED_SIZE.d * M) / 2);
-        const l = mesh(new T.SphereGeometry(0.003, 6, 4), lens, 'leds', z0 + LED_SIZE.d * M, e.id);
+        const l = mesh(new T.SphereGeometry(0.003, 6, 4), lens, 'leds', z0 + LED_SIZE.d * M, e.id, false, false);
         l.scale.set(1, 1, 0.5);
         l.position.set(x * M, y * M, z0 + LED_SIZE.d * M);
       }
@@ -601,7 +694,7 @@ export class SignScene {
     else if (e.type === 'vinyl') {
       const m = this.finish('vinyl', base) as T.MeshPhysicalMaterial;
       if (art) m.map = this.texture;
-      extrude(m, !!art);
+      extrude(m, !!art, false);
     } else extrude(faceMat(), true);
   }
 
@@ -678,6 +771,9 @@ export class SignScene {
         transparent: true,
         opacity: intensity > 0 ? 0.85 : 0,
         depthWrite: false,
+        polygonOffset: true,
+        polygonOffsetFactor: -1,
+        polygonOffsetUnits: -2,
       });
       if (glowOf) {
         this.lightUpdaters.push((cur) => {
@@ -686,7 +782,7 @@ export class SignScene {
           mat.opacity = g > 0 ? 0.85 : 0;
         });
       }
-      const m = mesh(new T.PlaneGeometry(width, height), mat, 'mounting', z, id);
+      const m = mesh(new T.PlaneGeometry(width, height), mat, 'mounting', z, id, false, false);
       m.position.set((minx + maxx) / 2, (miny + maxy) / 2, z);
       m.userData.extraTexture = tex;
     }
@@ -928,6 +1024,7 @@ export class SignScene {
     this.camera.position.copy(target).addScaledVector(dir, dist);
     this.camera.lookAt(target);
     this.setEnvironment({ ...s, environment });
+    this.renderNow();
     const url = this.renderer.domElement.toDataURL('image/png');
     this.camera.position.copy(pos);
     this.controls.target.copy(target);
@@ -936,12 +1033,12 @@ export class SignScene {
     this.setEnvironment(s);
     this.highlight();
     this.renderer.setSize(size.x, size.y, false);
-    this.resize();
+    this.resize(true);
     return url;
   }
 
   export() {
-    this.draw();
+    this.renderNow();
     return this.renderer.domElement.toDataURL('image/png');
   }
 }

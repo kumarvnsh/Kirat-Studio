@@ -29,12 +29,27 @@ export type ElementLayout = {
   returnColor?: string; // painted returns; unset = natural metal
   light?: ResolvedLight; // lit constructions only
   regions: Region[];
-  bounds: [number, number, number, number]; // x0, y0, x1, y1
+  bounds: [number, number, number, number]; // x0, y0, x1, y1 (mm)
+  pixelBounds?: [number, number, number, number]; // original traced pixel bounds [px0, py0, px1, py1]
   perimeter: number; // all outer and inner contours
   base: number; // z of the fascia the element is mounted on
   parts: LetterPart[];
   leds: Point[];
   fixings: Point[]; // stud (and standoff, if any) positions
+};
+export type GroupLayoutMetrics = {
+  id: string;
+  name: string;
+  baseCharHeight: number;
+  baseCharWidth: number;
+  charHeight: number;
+  charWidth: number;
+  charDepth: number;
+  naturalLetterGap: number;
+  letterGap: number;
+  naturalGroupGap: number;
+  groupGap: number;
+  bounds: [number, number, number, number]; // [x0, y0, x1, y1] in mm
 };
 export type Point3 = [number, number, number];
 export type Cable = { element: string; psu: number; points: Point3[]; length: number };
@@ -52,6 +67,9 @@ export type Layout = {
   letterBase: number; // z of the ACP front face
   frame: FrameMember[];
   elements: ElementLayout[];
+  groupMetrics: Record<string, GroupLayoutMetrics>;
+  naturalBoardGroupGap: number; // average natural gap between groups on the board (mm)
+  boardGroupGap: number; // effective average gap between groups on the board (mm)
   ledcount: number;
   returnLength: number; // mm
   power: Power;
@@ -156,6 +174,9 @@ export function computeLayout(design: DesignState): Layout {
     letterBase: front,
     frame: frameMembers(s),
     elements: [],
+    groupMetrics: {},
+    naturalBoardGroupGap: 0,
+    boardGroupGap: 0,
     ledcount: 0,
     returnLength: 0,
     power: { loadW: 0, psus: [], cables: [], warnings: [] },
@@ -166,15 +187,247 @@ export function computeLayout(design: DesignState): Layout {
       cx = (bx0 + bx1) / 2,
       cy = (by0 + by1) / 2;
     Object.assign(layout, { scale: k, cx, cy });
-    const map = (p: Point): Point => [(p[0] - cx) * k, (cy - p[1]) * k];
+    const baseMap = (p: Point): Point => [(p[0] - cx) * k, (cy - p[1]) * k];
+
+    // Precompute base group & character column metrics in mm.
+    type ElBase = {
+      id: string;
+      x0: number;
+      y0: number;
+      x1: number;
+      y1: number;
+      w: number;
+      h: number;
+      cx: number;
+      cy: number;
+    };
+    const elBaseMap = new Map<string, ElBase>();
+    for (const e of a.elements) {
+      if (e.type === 'omit') continue;
+      const x0 = (e.bounds[0] - cx) * k,
+        x1 = (e.bounds[2] - cx) * k,
+        y0 = (cy - e.bounds[3]) * k,
+        y1 = (cy - e.bounds[1]) * k;
+      elBaseMap.set(e.id, {
+        id: e.id,
+        x0,
+        y0,
+        x1,
+        y1,
+        w: Math.max(0.1, x1 - x0),
+        h: Math.max(0.1, y1 - y0),
+        cx: (x0 + x1) / 2,
+        cy: (y0 + y1) / 2,
+      });
+    }
+
+    type GroupBox = {
+      id: string;
+      name: string;
+      x0: number;
+      y0: number;
+      x1: number;
+      y1: number;
+      cx: number;
+      cy: number;
+      cols: { els: ElBase[]; x0: number; x1: number; y0: number; y1: number; cx: number; cy: number; w: number; h: number }[];
+      baseCharHeight: number;
+      baseCharWidth: number;
+      naturalLetterGap: number;
+    };
+    const groupBoxes: GroupBox[] = [];
+    for (const g of a.groups) {
+      const gEls = a.elements
+        .filter((e) => e.group === g.id && e.type !== 'omit')
+        .map((e) => elBaseMap.get(e.id)!)
+        .filter(Boolean);
+      if (!gEls.length) continue;
+      const gx0 = Math.min(...gEls.map((b) => b.x0)),
+        gx1 = Math.max(...gEls.map((b) => b.x1)),
+        gy0 = Math.min(...gEls.map((b) => b.y0)),
+        gy1 = Math.max(...gEls.map((b) => b.y1));
+      // Cluster elements into left-to-right character columns (stacked pieces overlap >= 40% horizontally)
+      const sorted = [...gEls].sort((p, q) => p.cx - q.cx);
+      const cols: GroupBox['cols'] = [];
+      for (const eb of sorted) {
+        const prev = cols[cols.length - 1];
+        if (prev) {
+          const overlap = Math.min(prev.x1, eb.x1) - Math.max(prev.x0, eb.x0);
+          if (overlap >= 0.4 * Math.min(prev.w, eb.w)) {
+            prev.els.push(eb);
+            prev.x0 = Math.min(prev.x0, eb.x0);
+            prev.x1 = Math.max(prev.x1, eb.x1);
+            prev.y0 = Math.min(prev.y0, eb.y0);
+            prev.y1 = Math.max(prev.y1, eb.y1);
+            prev.w = prev.x1 - prev.x0;
+            prev.h = prev.y1 - prev.y0;
+            prev.cx = (prev.x0 + prev.x1) / 2;
+            prev.cy = (prev.y0 + prev.y1) / 2;
+            continue;
+          }
+        }
+        cols.push({
+          els: [eb],
+          x0: eb.x0,
+          x1: eb.x1,
+          y0: eb.y0,
+          y1: eb.y1,
+          w: eb.w,
+          h: eb.h,
+          cx: eb.cx,
+          cy: eb.cy,
+        });
+      }
+      const baseCharHeight = cols.length > 1 ? Math.max(...cols.map((c) => c.h)) : Math.max(0.1, gy1 - gy0);
+      const sortedW = cols.map((c) => c.w).sort((p, q) => p - q);
+      const baseCharWidth = cols.length > 1 ? sortedW[Math.floor(sortedW.length / 2)] : Math.max(0.1, gx1 - gx0);
+      let naturalLetterGap = 0;
+      if (cols.length > 1) {
+        let sum = 0;
+        for (let i = 0; i < cols.length - 1; i++) sum += Math.max(0, cols[i + 1].x0 - cols[i].x1);
+        naturalLetterGap = sum / (cols.length - 1);
+      }
+      groupBoxes.push({
+        id: g.id,
+        name: g.name,
+        x0: gx0,
+        y0: gy0,
+        x1: gx1,
+        y1: gy1,
+        cx: (gx0 + gx1) / 2,
+        cy: (gy0 + gy1) / 2,
+        cols,
+        baseCharHeight,
+        baseCharWidth,
+        naturalLetterGap,
+      });
+    }
+
+    // Measure natural gaps between groups and compute group shift offsets when groupSpacing or groupGap is set.
+    const naturalGroupGapMap = new Map<string, { gap: number; axis: 'x' | 'y'; dir: number }>();
+    let gapSum = 0,
+      gapCount = 0;
+    const allCx = groupBoxes.length ? groupBoxes.reduce((s, b) => s + b.cx, 0) / groupBoxes.length : 0;
+    const allCy = groupBoxes.length ? groupBoxes.reduce((s, b) => s + b.cy, 0) / groupBoxes.length : 0;
+    for (const gb of groupBoxes) {
+      let bestGap = 0,
+        bestDist = Infinity,
+        axis: 'x' | 'y' = 'y',
+        dir = 1;
+      for (const other of groupBoxes) {
+        if (other.id === gb.id) continue;
+        const hGap = Math.max(gb.x0, other.x0) - Math.min(gb.x1, other.x1);
+        const vGap = Math.max(gb.y0, other.y0) - Math.min(gb.y1, other.y1);
+        const dist = Math.hypot(Math.max(0, hGap), Math.max(0, vGap)) || Math.hypot(gb.cx - other.cx, gb.cy - other.cy);
+        if (dist < bestDist) {
+          bestDist = dist;
+          if (hGap > vGap) {
+            axis = 'x';
+            bestGap = Math.max(0, hGap);
+            dir = gb.cx >= other.cx ? 1 : -1;
+          } else {
+            axis = 'y';
+            bestGap = Math.max(0, vGap);
+            dir = gb.cy >= other.cy ? 1 : -1;
+          }
+        }
+      }
+      if (groupBoxes.length <= 1) {
+        dir = gb.cy >= allCy ? 1 : -1;
+      }
+      naturalGroupGapMap.set(gb.id, { gap: bestGap, axis, dir });
+      if (groupBoxes.length > 1) {
+        gapSum += bestGap;
+        gapCount++;
+      }
+    }
+    const naturalBoardGroupGap = gapCount > 0 ? gapSum / gapCount : 0;
+    const boardSpacingDelta = s.groupSpacing ?? 0;
+    layout.naturalBoardGroupGap = +naturalBoardGroupGap.toFixed(1);
+    layout.boardGroupGap = +(naturalBoardGroupGap + boardSpacingDelta).toFixed(1);
+
+    // Build per-element point mapper and populate layout.groupMetrics
+    const elMapper = new Map<string, (p: Point) => Point>();
+    for (const gb of groupBoxes) {
+      const g = a.groups.find((x) => x.id === gb.id)!;
+      const gScaleY = g.charHeight !== undefined && gb.baseCharHeight > 0 ? g.charHeight / gb.baseCharHeight : 1;
+      const gScaleX = g.charWidth !== undefined && gb.baseCharWidth > 0 ? g.charWidth / gb.baseCharWidth : 1;
+      const letterSpacingDelta = g.letterSpacing ?? 0;
+      const ng = naturalGroupGapMap.get(gb.id) ?? { gap: 0, axis: 'y' as const, dir: 1 };
+      const groupGapDelta = g.groupGap ?? 0;
+      const totalGroupShift = groupBoxes.length > 1 ? boardSpacingDelta * 0.5 + groupGapDelta : groupGapDelta;
+      const groupShiftX = ng.axis === 'x' ? ng.dir * totalGroupShift : 0;
+      const groupShiftY = ng.axis === 'y' ? ng.dir * totalGroupShift : 0;
+
+      const resolved = resolveParams(g.type, g);
+      const effDepth =
+        g.charDepth ??
+        (recipes[g.type].lit ? resolved.depth : (resolved.thickness ?? VINYL_THICKNESS));
+
+      layout.groupMetrics[gb.id] = {
+        id: gb.id,
+        name: gb.name,
+        baseCharHeight: +gb.baseCharHeight.toFixed(1),
+        baseCharWidth: +gb.baseCharWidth.toFixed(1),
+        charHeight: +(gb.baseCharHeight * gScaleY).toFixed(1),
+        charWidth: +(gb.baseCharWidth * gScaleX).toFixed(1),
+        charDepth: +effDepth.toFixed(2),
+        naturalLetterGap: +(gb.naturalLetterGap * gScaleX).toFixed(1),
+        letterGap: +(gb.naturalLetterGap * gScaleX + letterSpacingDelta).toFixed(1),
+        naturalGroupGap: +ng.gap.toFixed(1),
+        groupGap: +(ng.gap + boardSpacingDelta + groupGapDelta).toFixed(1),
+        bounds: [gb.x0, gb.y0, gb.x1, gb.y1],
+      };
+
+      const numCols = gb.cols.length;
+      gb.cols.forEach((col, colIdx) => {
+        const colOffset = numCols > 1 ? (colIdx - (numCols - 1) / 2) * letterSpacingDelta : 0;
+        for (const eb of col.els) {
+          const e = a.elements.find((x) => x.id === eb.id)!;
+          const elScaleY = e.charHeight !== undefined && eb.h > 0 ? e.charHeight / eb.h : gScaleY;
+          const elScaleX = e.charWidth !== undefined && eb.w > 0 ? e.charWidth / eb.w : gScaleX;
+          const elSpacing = e.letterSpacing ?? 0;
+          const isIdentity =
+            elScaleX === 1 &&
+            elScaleY === 1 &&
+            gScaleX === 1 &&
+            gScaleY === 1 &&
+            colOffset === 0 &&
+            elSpacing === 0 &&
+            groupShiftX === 0 &&
+            groupShiftY === 0;
+          if (isIdentity) {
+            elMapper.set(eb.id, baseMap);
+          } else {
+            const targetColCx = gb.cx + (col.cx - gb.cx) * gScaleX + colOffset + elSpacing + groupShiftX;
+            const targetColCy = gb.cy + (col.cy - gb.cy) * gScaleY + groupShiftY;
+            elMapper.set(eb.id, (p: Point): Point => {
+              const [bx, by] = baseMap(p);
+              return [
+                targetColCx + (bx - col.cx) * elScaleX,
+                targetColCy + (by - col.cy) * elScaleY,
+              ];
+            });
+          }
+        }
+      });
+    }
+
     for (const e of a.elements) {
       if (e.type === 'omit') continue;
       const recipe = recipes[e.type],
         group = a.groups.find((g) => g.id === e.group),
-        params = resolveParams(e.type, group),
+        params = { ...resolveParams(e.type, group) },
         light = resolveLight(group, e, s.ledTemp),
+        map = elMapper.get(e.id) ?? baseMap,
         regions = e.regions.map((r) => ({ outer: r.outer.map(map), holes: r.holes.map((h) => h.map(map)) })),
         m = recipe.materials;
+      if (typeof e.charDepth === 'number') {
+        if (recipe.lit) params.depth = e.charDepth;
+        else params.thickness = e.charDepth;
+      } else if (typeof group?.charDepth === 'number' && !recipe.lit) {
+        params.thickness = group.charDepth;
+      }
       const parts: LetterPart[] = [];
       let z = front;
       const add = (kind: PartKind, layer: LayerId, depth: number, material = '') => {
@@ -223,6 +476,7 @@ export function computeLayout(design: DesignState): Layout {
         returnColor: group?.returnColor,
         regions,
         bounds: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)],
+        pixelBounds: e.bounds,
         perimeter: loops.reduce((n, l) => n + perimeter(l), 0),
         base: front,
         parts,
@@ -243,6 +497,18 @@ export function computeLayout(design: DesignState): Layout {
       layout.ledcount += el.leds.length;
       if (recipe.lit) layout.returnLength += el.perimeter;
       layout.elements.push(el);
+    }
+    // Update groupMetrics bounds from placed elements
+    for (const gm of Object.values(layout.groupMetrics)) {
+      const placed = layout.elements.filter((el) => el.group === gm.id);
+      if (placed.length) {
+        gm.bounds = [
+          Math.min(...placed.map((el) => el.bounds[0])),
+          Math.min(...placed.map((el) => el.bounds[1])),
+          Math.max(...placed.map((el) => el.bounds[2])),
+          Math.max(...placed.map((el) => el.bounds[3])),
+        ];
+      }
     }
   }
   layout.power = planPower(layout, s);

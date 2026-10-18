@@ -5,8 +5,10 @@ import { loadImage } from '../artwork/import.ts';
 import { constructionNames } from '../domain/project.ts';
 import { environments, type Environment } from '../domain/lighting.ts';
 import { computeLayout, sceneInput } from '../domain/layout.ts';
+import { formatAllUnits, formatDimsAllUnits, formatDimsInUnit } from '../domain/units.ts';
 import { fabricationPlan } from '../fabrication/plan.ts';
-import { setMode, viewer } from './actions.ts';
+import { activeArtCanvas, setMode, viewer } from './actions.ts';
+import { UnitSelector } from './ScrubInput.tsx';
 import {
   clearSelection,
   getState,
@@ -68,29 +70,33 @@ export function Viewport({
       canvas.width = artwork.imageWidth;
       canvas.height = artwork.imageHeight;
       canvas.getContext('2d')!.drawImage(img, 0, 0);
-      if (live) setArt({ data: artwork.imageData, canvas });
+      if (live) {
+        activeArtCanvas.current = canvas;
+        setArt({ data: artwork.imageData, canvas });
+      }
     });
     return () => {
       live = false;
     };
   }, [artwork?.imageData]);
 
-  // Full rebuild only when design geometry, artwork texture, or 3D/bend mode changes.
+  // Full rebuild when design geometry, artwork texture, or 3D/bend mode changes.
   const bendTarget = view.mode === 'bend' ? view.selected : null;
   useEffect(() => {
     const v = viewer.current;
-    if (!v || !ready) return;
-    v.build(sceneInput(design, getState().view), art!.canvas);
-  }, [design, ready, art, view.mode, bendTarget]);
+    if (!v) return;
+    if (!ready && artwork) return;
+    v.build(sceneInput(design, getState().view), ready ? art!.canvas : null);
+  }, [design, ready, art, artwork, view.mode, bendTarget]);
 
   // Fast environment & camera exposure update (no geometry rebuild).
   useEffect(() => {
-    if (ready && viewer.current?.state) viewer.current.setEnvironment(sceneInput(design, view));
+    if (viewer.current?.state) viewer.current.setEnvironment(sceneInput(design, view));
   }, [ready, design, view.environment, view.exposure]);
 
   // Fast master lighting & dimming update (no geometry rebuild).
   useEffect(() => {
-    if (ready && viewer.current?.state) viewer.current.setLighting(sceneInput(design, view));
+    if (viewer.current?.state) viewer.current.setLighting(sceneInput(design, view));
   }, [ready, design, view.lights, view.dimming]);
 
   // Fast forming study strip update when scrubbing bend progress (no full board rebuild).
@@ -103,7 +109,7 @@ export function Viewport({
   // Cheap visibility pass: stage, layers, explode, isolation, selection.
   useEffect(() => {
     const v = viewer.current;
-    if (!v?.state || !ready) return;
+    if (!v?.state) return;
     v.state = sceneInput(design, view);
     v.setVisibility(v.state);
   }, [
@@ -133,11 +139,15 @@ export function Viewport({
   const selected = artwork?.elements.find((e) => e.id === view.selected);
   const group = selected && artwork?.groups.find((g) => g.id === selected.group);
   const s = design.settings,
+    unit = view.unit ?? 'mm',
     layout = computeLayout(design),
     placed = selected ? layout.elements.find((e) => e.id === selected.id) : undefined,
+    placedW = placed ? placed.bounds[2] - placed.bounds[0] : 0,
+    placedH = placed ? placed.bounds[3] - placed.bounds[1] : 0,
+    placedD = placed && placed.parts.length ? Math.max(...placed.parts.map((p) => p.z1)) - placed.base : 0,
     placedDims =
       placed && placed.parts.length
-        ? `${Math.round(placed.bounds[2] - placed.bounds[0])} × ${Math.round(placed.bounds[3] - placed.bounds[1])} × ${+(Math.max(...placed.parts.map((p) => p.z1)) - placed.base).toFixed(1)} mm`
+        ? `${formatDimsAllUnits(placedW, placedH)} · Depth ${formatAllUnits(placedD)}`
         : null;
 
   return (
@@ -166,6 +176,7 @@ export function Viewport({
               </button>
             ))}
           </div>
+          <UnitSelector compact />
         </div>
         <div className="lightingbuttons">
           <button
@@ -317,11 +328,9 @@ export function Viewport({
           <b>{artwork ? layout.ledcount : '—'}</b>
           <small>symbolic LED positions</small>
         </div>
-        <div>
-          <b>
-            {s.width} × {s.height}
-          </b>
-          <small>board / mm</small>
+        <div title={formatDimsAllUnits(s.width, s.height)}>
+          <b>{formatDimsInUnit(s.width, s.height, unit)}</b>
+          <small>{formatDimsAllUnits(s.width, s.height)}</small>
         </div>
       </div>
       <div id="message" role="status" aria-live="polite">

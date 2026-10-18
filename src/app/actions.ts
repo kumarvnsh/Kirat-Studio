@@ -1,10 +1,10 @@
 // Operations that span panels: importing artwork, opening/saving projects, mode changes, export.
 import { loadImage, traceImage } from '../artwork/import.ts';
 import { svgArtwork } from '../artwork/svg.ts';
-import type { Artwork } from '../domain/project.ts';
-import type { ViewMode } from '../domain/project.ts';
+import { LAYER_COUNT, type Artwork, type ViewMode } from '../domain/project.ts';
+import { ALL_STEPS } from '../domain/assembly.ts';
 import { AUTOSAVE, BACKUP, parseProject, readStore, serialise, writeStore } from '../storage/project.ts';
-import { computeLayout } from '../domain/layout.ts';
+import { computeLayout, sceneInput } from '../domain/layout.ts';
 import { recipes } from '../domain/recipes.ts';
 import { kelvinToHex } from '../domain/lighting.ts';
 import { editDesign, getState, loadDesign, say, setTrace, setView, subscribe } from './store.ts';
@@ -12,6 +12,23 @@ import type { SignScene } from '../scene/scene.ts';
 
 // The renderer, set by <Viewport>. Null when WebGL is unavailable.
 export const viewer: { current: SignScene | null } = { current: null };
+export const activeArtCanvas: { current: HTMLCanvasElement | null } = { current: null };
+
+export function applySceneChanges(note = 'All structure, dimension, and material changes applied to the 3D scene.') {
+  if (typeof document !== 'undefined' && document.activeElement instanceof HTMLElement) {
+    document.activeElement.blur();
+  }
+  const { design, view } = getState();
+  if (view.step < ALL_STEPS || view.layers.some((l) => l === false)) {
+    setView({ step: ALL_STEPS, layers: Array(LAYER_COUNT).fill(true) });
+  }
+  const nextState = getState();
+  if (viewer.current) {
+    viewer.current.build(sceneInput(nextState.design.present, nextState.view), activeArtCanvas.current);
+  }
+  say(note);
+}
+
 // What the current artwork came from, so Trace & rebuild can redo it.
 let source: { image: HTMLImageElement } | { svg: string } | null = null;
 

@@ -3,6 +3,7 @@
 // and a per-group menu (isolate, merge, delete, reorder).
 import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent, type MouseEvent } from 'react';
 import type { Artwork, ArtworkElement, ArtworkGroup, ConstructionType, DesignSettings } from '../domain/project.ts';
+import { formatDimsAllUnits, formatDimsInUnit } from '../domain/units.ts';
 import {
   createGroup,
   deleteGroup,
@@ -11,7 +12,9 @@ import {
   moveGroup,
   renameElement,
   renameGroup,
+  setElements,
 } from '../editor/artworkOps.ts';
+import { applySceneChanges } from './actions.ts';
 import {
   editDesign,
   isolate,
@@ -93,7 +96,8 @@ type Rename = { kind: 'group' | 'element'; id: string } | null;
 export function StructureTree() {
   const design = useDesign(),
     a = design.artwork,
-    view = useView();
+    view = useView(),
+    unit = view.unit ?? 'mm';
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [renaming, setRenaming] = useState<Rename>(null);
   const [menu, setMenu] = useState<string | null>(null);
@@ -165,7 +169,10 @@ export function StructureTree() {
       grp = ev.dataTransfer.getData('kirat/group');
     if (els) {
       const ids: string[] = JSON.parse(els);
-      editArtwork((art) => moveElements(art, ids, g.id), `Moved ${ids.length} element(s) to ${g.name}.`);
+      editArtwork(
+        (art) => setElements(moveElements(art, ids, g.id), ids, { type: 'inherit' }),
+        `Moved ${ids.length} element(s) to ${g.name} (${shortType[g.type]}).`,
+      );
     } else if (grp && grp !== g.id) editArtwork((art) => moveGroup(art, grp, index), 'Group order changed.');
   };
 
@@ -205,16 +212,23 @@ export function StructureTree() {
             Show all
           </button>
         )}
+        <button
+          className="accent"
+          title="Commit pending edits and refresh 3D assembly"
+          onClick={() => applySceneChanges()}
+        >
+          ✓ Apply
+        </button>
       </div>
       <div
         className={'tree-row board' + (boardSelected ? ' active' : '')}
-        title="Click to inspect and edit the backing board"
+        title={`Click to inspect and edit the backing board (${formatDimsAllUnits(design.settings.width, design.settings.height)})`}
         onClick={() => selectBoard()}
       >
         <i className="swatch" style={{ background: design.settings.boardcolor }} />
         <span className="name">Board structure</span>
-        <small className="badge">
-          {design.settings.width} × {design.settings.height} mm
+        <small className="badge" title={formatDimsAllUnits(design.settings.width, design.settings.height)}>
+          {formatDimsInUnit(design.settings.width, design.settings.height, unit)}
         </small>
       </div>
       {a.groups.map((g, gi) => {
@@ -361,9 +375,13 @@ function GroupMenu({
       {others.map((o) => (
         <button
           key={o.id}
-          onClick={act(() =>
-            editArtwork((x) => mergeGroups(x, g.id, o.id), `${g.name} merged into ${o.name}.`),
-          )}
+          onClick={act(() => {
+            const movedIds = a.elements.filter((e) => e.group === g.id).map((e) => e.id);
+            editArtwork(
+              (x) => setElements(mergeGroups(x, g.id, o.id), movedIds, { type: 'inherit' }),
+              `${g.name} merged into ${o.name} (${shortType[o.type]}).`,
+            );
+          })}
         >
           ↳ {o.name}
         </button>

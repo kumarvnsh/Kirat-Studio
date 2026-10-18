@@ -13,6 +13,7 @@ import { boardStack, computeLayout, MODULE_W, PSU_LOADING, PSU_W } from '../doma
 import { bom } from '../domain/bom.ts';
 import { kelvinToHex, LED_TEMPS } from '../domain/lighting.ts';
 import {
+  applySceneChanges,
   hasBackup,
   importImage,
   importSvg,
@@ -35,7 +36,8 @@ import {
 import { assemblySteps } from '../domain/assembly.ts';
 import { MakePanel } from './MakePanel.tsx';
 import { CrossSectionDiagram } from './ConstructionDiagram.tsx';
-import { ScrubInput } from './ScrubInput.tsx';
+import { ScrubInput, UnitSelector } from './ScrubInput.tsx';
+import { formatAllUnits, formatInUnit } from '../domain/units.ts';
 
 export type ToolTab = 'art' | 'board' | 'build' | 'make';
 
@@ -222,7 +224,10 @@ function ArtworkPanel() {
 }
 
 function BoardPanel() {
-  const settings = useDesign().settings;
+  const design = useDesign();
+  const settings = design.settings;
+  const unit = useView().unit ?? 'mm';
+  const layout = computeLayout(design);
   const [draft, setDraft] = useState<DesignSettings>(settings);
   useEffect(() => setDraft(settings), [settings]); // undo/redo/open refresh the form
   const commit = (next: DesignSettings, note?: string, coalesceKey?: string) => {
@@ -248,7 +253,9 @@ function BoardPanel() {
         step={r.step}
         unit={'unit' in r ? r.unit : 'mm'}
         value={draft[k]}
-        onChange={(v, scrubbing) => setLive(k, v, `${r.label} set to ${v} mm.`, scrubbing)}
+        onChange={(v, scrubbing) =>
+          setLive(k, v, `${r.label} set to ${formatInUnit(v, unit)}.`, scrubbing)
+        }
         onInvalid={() => say(`${r.label} must be between ${r.min} and ${r.max} mm.`)}
       />
     );
@@ -260,10 +267,15 @@ function BoardPanel() {
       (d) => ({ ...d, settings: draft }),
       'Geometry updated using nominal dimensions. Review fit and construction before production.',
     );
+    applySceneChanges('Board & structure settings applied to 3D viewport.');
   };
+  const effGroupSpacing = +(draft.groupSpacing ?? layout.naturalBoardGroupGap).toFixed(1);
   return (
     <section className="panel active">
-      <div className="eyebrow">ASSEMBLY SETTINGS / mm (LIVE SCRUB)</div>
+      <div className="inspector-head-row">
+        <div className="eyebrow">ASSEMBLY SETTINGS ({unit.toUpperCase()} · MM / IN / FT)</div>
+        <UnitSelector />
+      </div>
       <h2>The supporting structure.</h2>
       <div className="pair">{(['width', 'height'] as const).map(num)}</div>
       <label>
@@ -276,6 +288,23 @@ function BoardPanel() {
           onChange={(e) => setLive('artscale', +e.target.value)}
         />
       </label>
+      <ScrubInput
+        label="Space between groups"
+        min={-500}
+        max={2000}
+        step={5}
+        unit="mm"
+        value={effGroupSpacing}
+        onChange={(v, scrubbing) =>
+          setLive(
+            'groupSpacing',
+            v,
+            `Space between groups set to ${formatInUnit(v, unit)}.`,
+            scrubbing,
+          )
+        }
+        onInvalid={() => say('Space between groups must be between -500 and 2000 mm.')}
+      />
       <div className="pair">{(['acp', 'gi', 'frame', 'framewall'] as const).map(num)}</div>
       {num('backing')}
       <CrossSectionDiagram settings={draft} />
@@ -301,12 +330,18 @@ function BoardPanel() {
         <input
           type="color"
           value={draft.facecolor}
-          onChange={(e) => setLive('facecolor', e.target.value, 'Uniform face colour updated.')}
+          onChange={(e) =>
+            commit(
+              { ...draft, facecolor: e.target.value, keepart: false },
+              'Uniform face colour applied to letters.',
+              'board-facecolor',
+            )
+          }
         />
       </label>
       <div className="row">
         <button className="accent" onClick={update}>
-          Update geometry
+          ✓ Apply / Update geometry
         </button>
         <button
           onClick={() =>
@@ -317,8 +352,9 @@ function BoardPanel() {
         </button>
       </div>
       <div className="callout">
-        Drag any dimension label ↔ or use the inputs to update the 3D board live. Letter depths, gauges and
-        standoffs belong to each artwork group's construction in the right-hand inspector.
+        Drag any dimension label ↔ or use the inputs to update the 3D board live, or click{' '}
+        <b>Apply / Update geometry</b>. Letter heights, widths, depths and character spacing belong to each
+        artwork group or letter in the right-hand inspector.
       </div>
     </section>
   );
@@ -444,22 +480,31 @@ function BuildPanel() {
 
 // Board layers with z positions; z = 0 is the centre of the steel frame.
 function StackTable({ settings }: { settings: DesignSettings }) {
+  const unit = useView().unit ?? 'mm';
   const { layers, front } = boardStack(settings);
+  const totalDepth = +(front - layers[0].z0).toFixed(2);
   return (
     <table className="stack">
       <tbody>
-        {layers.map((l) => (
-          <tr key={l.layer}>
-            <td>{l.name}</td>
-            <td>{+(l.z1 - l.z0).toFixed(2)} mm</td>
-          </tr>
-        ))}
-        <tr>
+        {layers.map((l) => {
+          const mm = +(l.z1 - l.z0).toFixed(2);
+          return (
+            <tr key={l.layer} title={formatAllUnits(mm)}>
+              <td>{l.name}</td>
+              <td>
+                {formatInUnit(mm, unit)}
+                <small>{formatAllUnits(mm)}</small>
+              </td>
+            </tr>
+          );
+        })}
+        <tr title={formatAllUnits(totalDepth)}>
           <td>
             <b>Board depth</b>
           </td>
           <td>
-            <b>{+(front - layers[0].z0).toFixed(2)} mm</b>
+            <b>{formatInUnit(totalDepth, unit)}</b>
+            <small>{formatAllUnits(totalDepth)}</small>
           </td>
         </tr>
       </tbody>

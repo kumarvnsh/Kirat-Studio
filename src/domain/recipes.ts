@@ -141,6 +141,10 @@ export function resolveParams(type: ConstructionType, group?: ArtworkGroup): Rec
   for (const [k, p] of Object.entries(recipes[type].params)) out[k] = p.value;
   if (group?.type === type && group.params)
     for (const k of Object.keys(out)) if (typeof group.params[k] === 'number') out[k] = group.params[k];
+  if (typeof group?.charDepth === 'number') {
+    if ('depth' in out) out.depth = group.charDepth;
+    else if ('thickness' in out) out.thickness = group.charDepth;
+  }
   return out;
 }
 

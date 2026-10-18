@@ -5,6 +5,7 @@
 // Dimensions are millimetres. Conversion to metres happens only in src/scene.
 
 import type { Environment } from './lighting.ts';
+import type { LengthUnit } from './units.ts';
 
 export type ConstructionType =
   | 'front'
@@ -42,6 +43,10 @@ export type ArtworkElement = {
   bounds: [number, number, number, number]; // traced image pixels, y down
   color: string; // average colour of the artwork (traced / SVG fill)
   faceColor?: string; // chosen face colour; overrides the group's
+  charHeight?: number; // per-character height override (mm)
+  charWidth?: number; // per-character width override (mm)
+  charDepth?: number; // per-character 3D depth / thickness override (mm)
+  letterSpacing?: number; // per-character horizontal offset (mm)
   regions: Region[];
 };
 
@@ -54,6 +59,11 @@ export type ArtworkGroup = {
   faceColor?: string; // face / flat colour for the group; unset = artwork colours or board default
   returnColor?: string; // painted return colour (lit letters); unset = natural metal
   light?: GroupLight; // lit constructions only; unset fields follow the board defaults
+  charHeight?: number; // nominal character height for the group (mm)
+  charWidth?: number; // nominal character width for the group (mm)
+  charDepth?: number; // nominal character depth / thickness for the group (mm)
+  letterSpacing?: number; // extra horizontal spacing between characters in this group (mm)
+  groupGap?: number; // extra spacing between this group and adjacent groups (mm)
 };
 
 // Per-group lighting (one circuit per group).
@@ -92,6 +102,7 @@ export type DesignSettings = Record<NumericKey, number> & {
   boardcolor: string;
   facecolor: string;
   keepart: boolean; // preserve artwork colours on faces
+  groupSpacing?: number; // extra space between groups (mm)
 };
 
 export type DesignState = { settings: DesignSettings; artwork: Artwork | null };
@@ -99,6 +110,7 @@ export type DesignState = { settings: DesignSettings; artwork: Artwork | null };
 export type ViewMode = '3d' | '2d' | 'bend';
 export type ViewState = {
   mode: ViewMode;
+  unit?: LengthUnit; // display/edit length unit: mm, in (inch), ft (foot)
   selected: string | null;
   selectionActive: boolean;
   isolate: boolean;
@@ -192,6 +204,7 @@ export function defaultSettings(): DesignSettings {
 export function defaultView(): ViewState {
   return {
     mode: '3d',
+    unit: 'mm',
     selected: null,
     selectionActive: false,
     isolate: false,
@@ -199,8 +212,8 @@ export function defaultView(): ViewState {
     layers: Array(LAYER_COUNT).fill(true),
     explode: 0,
     bend: 100,
-    environment: 'night',
-    lights: true,
+    environment: 'day',
+    lights: false,
     dimming: 1,
     exposure: 0,
     presentation: false,
@@ -219,5 +232,7 @@ export function checkSettings(s: DesignSettings): string | null {
       return `${r.label} must be between ${r.min} and ${r.max} ${'unit' in r ? r.unit : 'mm'}.`;
   }
   if (s.framewall * 2 >= s.frame) return 'Frame wall must be less than half the frame section.';
+  if (s.groupSpacing !== undefined && (!Number.isFinite(s.groupSpacing) || s.groupSpacing < -1000 || s.groupSpacing > 3000))
+    return 'Space between groups must be between -1000 and 3000 mm.';
   return null;
 }

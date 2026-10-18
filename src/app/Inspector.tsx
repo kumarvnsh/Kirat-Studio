@@ -13,6 +13,7 @@ import {
   type ConstructionType,
   type LightMode,
 } from '../domain/project.ts';
+import { formatAllUnits, formatDimsAllUnits, formatInUnit } from '../domain/units.ts';
 import {
   artworkPalette,
   createGroup,
@@ -22,9 +23,9 @@ import {
   setElements,
   setGroup,
 } from '../editor/artworkOps.ts';
-import { viewer } from './actions.ts';
+import { applySceneChanges, viewer } from './actions.ts';
 import { ConstructionPicker, CrossSectionDiagram } from './ConstructionDiagram.tsx';
-import { ScrubInput } from './ScrubInput.tsx';
+import { ScrubInput, UnitSelector } from './ScrubInput.tsx';
 import {
   editDesign,
   isolate,
@@ -78,9 +79,22 @@ export function Inspector() {
         : undefined;
   return (
     <aside className="inspector">
-      <div className="eyebrow">STRUCTURE</div>
+      <div className="eyebrow inspector-head-row">
+        <span>STRUCTURE</span>
+        <UnitSelector compact />
+      </div>
       <StructureTree />
-      <div className="eyebrow props-head">PROPERTIES</div>
+      <div className="eyebrow props-head inspector-head-row">
+        <span>PROPERTIES</span>
+        <button
+          type="button"
+          className="apply-inline-btn"
+          title="Commit pending inputs and refresh 3D viewport immediately"
+          onClick={() => applySceneChanges()}
+        >
+          ✓ Apply changes
+        </button>
+      </div>
       {!a ? null : view.selectedGroup === '__board' ? (
         <BoardProps a={a} />
       ) : group ? (
@@ -108,7 +122,8 @@ export function Inspector() {
 // ——— Board overview & quick settings ———
 function BoardProps({ a }: { a: Artwork }) {
   const design = useDesign(),
-    s = design.settings;
+    s = design.settings,
+    layout = computeLayout(design);
   const setSetting = <K extends keyof typeof s>(
     key: K,
     value: (typeof s)[K],
@@ -124,9 +139,10 @@ function BoardProps({ a }: { a: Artwork }) {
     <div className="props">
       <div className="props-title">
         <Swatch colors={[s.boardcolor]} /> <b>Board structure</b>{' '}
-        <small>
-          {s.width} × {s.height} mm · {a.groups.length} groups
-        </small>
+        <small>{a.groups.length} groups</small>
+      </div>
+      <div className="units-banner">
+        <b>Board size:</b> {formatDimsAllUnits(s.width, s.height)}
       </div>
       <CrossSectionDiagram settings={s} />
       <div className="pair">
@@ -159,6 +175,55 @@ function BoardProps({ a }: { a: Artwork }) {
           onChange={(e) => setSetting('artscale', +e.target.value, undefined, true)}
         />
       </label>
+      {a.groups.length > 1 && (
+        <ScrubInput
+          label="Space between groups"
+          min={0}
+          max={2500}
+          step={1}
+          value={Math.max(0, layout.boardGroupGap)}
+          onChange={(v, scrubbing) =>
+            setSetting(
+              'groupSpacing',
+              +(v - layout.naturalBoardGroupGap).toFixed(1),
+              `Space between groups set to ${formatAllUnits(v)}.`,
+              scrubbing,
+            )
+          }
+        />
+      )}
+      <div className="recipe">
+        <div className="sectionlabel">GROUPS &amp; CHARACTER DIMENSIONS (mm · in · ft)</div>
+        <table className="stack">
+          <tbody>
+            {a.groups.map((grp) => {
+              const gm = layout.groupMetrics[grp.id];
+              if (!gm) return null;
+              return (
+                <tr
+                  key={grp.id}
+                  style={{ cursor: 'pointer' }}
+                  title="Click to edit this group's character height, width, depth, and spacing"
+                  onClick={() => selectGroup(grp.id)}
+                >
+                  <td>
+                    <b>{grp.name}</b> · {shortType[grp.type]}
+                    <small>
+                      Char H: {formatAllUnits(gm.charHeight)}
+                      <br />
+                      Char W: {formatAllUnits(gm.charWidth)} · Depth: {formatAllUnits(gm.charDepth)}
+                      <br />
+                      Letter gap: {formatAllUnits(gm.letterGap)}
+                      {a.groups.length > 1 ? ` · Group gap: ${formatAllUnits(gm.groupGap)}` : ''}
+                    </small>
+                  </td>
+                  <td>Edit →</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
       <ColorField
         label="ACP fascia finish"
         value={s.boardcolor}
@@ -182,9 +247,12 @@ function BoardProps({ a }: { a: Artwork }) {
           ))}
         </select>
       </label>
+      <button className="full accent" onClick={() => applySceneChanges('Board & group settings applied to 3D view.')}>
+        ✓ Apply board &amp; structure changes
+      </button>
       <p className="muted">
         Click any <b>Group</b> or <b>Letter</b> in the tree above (or directly in the 3D scene) to configure its
-        3D construction, return depth, and lighting circuit.
+        character height, width, depth, spacing, and lighting circuit.
       </p>
     </div>
   );
@@ -193,6 +261,8 @@ function BoardProps({ a }: { a: Artwork }) {
 // ——— Group ———
 function GroupProps({ a, g }: { a: Artwork; g: ArtworkGroup }) {
   const design = useDesign(),
+    layout = computeLayout(design),
+    gm = layout.groupMetrics[g.id],
     els = a.elements.filter((e) => e.group === g.id),
     ids = els.map((e) => e.id),
     overrides = els.filter((e) => e.override || e.faceColor).length,
@@ -205,11 +275,22 @@ function GroupProps({ a, g }: { a: Artwork; g: ArtworkGroup }) {
     const bad = checkParams(g.type, { ...g.params, [key]: value });
     if (bad) return say(bad);
     editArtwork(
-      (x) => setGroup(x, g.id, { params: { [key]: value } }),
-      `${g.name}: ${recipe.params[key].label} set to ${value} mm.`,
+      (x) =>
+        setGroup(x, g.id, {
+          params: { [key]: value },
+          ...(key === 'depth' || key === 'thickness' ? { charDepth: null } : {}),
+        }),
+      `${g.name}: ${recipe.params[key].label} set to ${formatAllUnits(value)}.`,
       scrubbing ? `param-${g.id}-${key}` : undefined,
     );
   };
+  const hasCustomSizing =
+    g.charHeight !== undefined ||
+    g.charWidth !== undefined ||
+    g.charDepth !== undefined ||
+    g.letterSpacing !== undefined ||
+    g.groupGap !== undefined ||
+    design.settings.groupSpacing !== undefined;
   const glowHex =
     g.light?.mode === 'rgb' && g.light.color
       ? g.light.color
@@ -219,6 +300,16 @@ function GroupProps({ a, g }: { a: Artwork; g: ArtworkGroup }) {
       <div className="props-title">
         <Swatch colors={grpCols} /> <b>{g.name}</b> <small>group · {els.length} letters</small>
       </div>
+      {gm && (
+        <div className="units-banner">
+          <div>
+            <b>Char H × W:</b> {formatAllUnits(gm.charHeight)} × {formatAllUnits(gm.charWidth)}
+          </div>
+          <div>
+            <b>Depth:</b> {formatAllUnits(gm.charDepth)} · <b>Spacing:</b> {formatAllUnits(gm.letterGap)}
+          </div>
+        </div>
+      )}
       <CrossSectionDiagram
         settings={design.settings}
         type={g.type}
@@ -232,19 +323,139 @@ function GroupProps({ a, g }: { a: Artwork; g: ArtworkGroup }) {
         value={g.name}
         onCommit={(v) => editArtwork((x) => renameGroup(x, g.id, v))}
       />
+      {gm && (
+        <div className="recipe">
+          <div className="sectionlabel">CHARACTER DIMENSIONS &amp; SPACING (mm / in / ft)</div>
+          <div className="pair">
+            <ScrubInput
+              label="Character height"
+              min={5}
+              max={4000}
+              step={1}
+              value={gm.charHeight}
+              onChange={(v, scrubbing) =>
+                editArtwork(
+                  (x) => setGroup(x, g.id, { charHeight: v }),
+                  `${g.name} character height set to ${formatAllUnits(v)}.`,
+                  scrubbing ? `gch-${g.id}` : undefined,
+                )
+              }
+            />
+            <ScrubInput
+              label="Character width"
+              min={5}
+              max={4000}
+              step={1}
+              value={gm.charWidth}
+              onChange={(v, scrubbing) =>
+                editArtwork(
+                  (x) => setGroup(x, g.id, { charWidth: v }),
+                  `${g.name} character width set to ${formatAllUnits(v)}.`,
+                  scrubbing ? `gcw-${g.id}` : undefined,
+                )
+              }
+            />
+          </div>
+          <div className="pair">
+            <ScrubInput
+              label="Character depth"
+              min={0.15}
+              max={200}
+              step={0.5}
+              value={gm.charDepth}
+              onChange={(v, scrubbing) =>
+                editArtwork(
+                  (x) =>
+                    setGroup(x, g.id, {
+                      charDepth: v,
+                      params: recipe.lit
+                        ? { depth: Math.max(20, Math.min(200, Math.round(v))) }
+                        : 'thickness' in recipe.params
+                          ? {
+                              thickness: Math.max(
+                                recipe.params.thickness.min,
+                                Math.min(recipe.params.thickness.max, v),
+                              ),
+                            }
+                          : undefined,
+                    }),
+                  `${g.name} character depth set to ${formatAllUnits(v)}.`,
+                  scrubbing ? `gcd-${g.id}` : undefined,
+                )
+              }
+            />
+            {els.length > 1 && (
+              <ScrubInput
+                label="Character spacing"
+                min={0}
+                max={1500}
+                step={1}
+                value={Math.max(0, gm.letterGap)}
+                onChange={(v, scrubbing) =>
+                  editArtwork(
+                    (x) => setGroup(x, g.id, { letterSpacing: +(v - gm.naturalLetterGap).toFixed(1) }),
+                    `${g.name} character spacing set to ${formatAllUnits(v)}.`,
+                    scrubbing ? `gls-${g.id}` : undefined,
+                  )
+                }
+              />
+            )}
+          </div>
+          {a.groups.length > 1 && (
+            <ScrubInput
+              label="Space between groups"
+              min={0}
+              max={2500}
+              step={1}
+              value={Math.max(0, gm.groupGap)}
+              onChange={(v, scrubbing) =>
+                editArtwork(
+                  (x) =>
+                    setGroup(x, g.id, {
+                      groupGap: +(v - gm.naturalGroupGap - (design.settings.groupSpacing ?? 0)).toFixed(1),
+                    }),
+                  `Space between ${g.name} and adjacent group set to ${formatAllUnits(v)}.`,
+                  scrubbing ? `ggap-${g.id}` : undefined,
+                )
+              }
+            />
+          )}
+          {hasCustomSizing && (
+            <button
+              type="button"
+              className="link"
+              onClick={() =>
+                editArtwork(
+                  (x) =>
+                    setGroup(x, g.id, {
+                      charHeight: null,
+                      charWidth: null,
+                      charDepth: null,
+                      letterSpacing: null,
+                      groupGap: null,
+                    }),
+                  `${g.name} reset to natural artwork dimensions and spacing.`,
+                )
+              }
+            >
+              Reset character size &amp; spacing to artwork defaults
+            </button>
+          )}
+        </div>
+      )}
       <div className="sectionlabel">CONSTRUCTION TYPE</div>
       <ConstructionPicker
         value={g.type}
         onChange={(t) =>
           editArtwork(
-            (x) => setGroup(x, g.id, { type: t as ConstructionType }),
+            (x) => setGroup(x, g.id, { type: t as ConstructionType, applyToOverrides: true }),
             `${g.name} set to ${recipes[t as ConstructionType].name}.`,
           )
         }
       />
       {Object.keys(recipe.params).length > 0 && (
         <div className="recipe">
-          <div className="sectionlabel">{recipe.name.toUpperCase()} / mm (DRAG ↔ TO SCRUB)</div>
+          <div className="sectionlabel">{recipe.name.toUpperCase()} PARAMETERS (DRAG ↔ TO SCRUB)</div>
           <div className="pair">
             {Object.entries(recipe.params).map(([key, p]) => (
               <ScrubInput
@@ -309,6 +520,9 @@ function GroupProps({ a, g }: { a: Artwork; g: ArtworkGroup }) {
           Clear {overrides} letter override{overrides > 1 ? 's' : ''}
         </button>
       )}
+      <button className="full accent" onClick={() => applySceneChanges(`${g.name} changes applied to 3D view.`)}>
+        ✓ Apply group changes
+      </button>
       <div className="row">
         <button onClick={() => (selectGroup(g.id), viewer.current?.focusSelection())}>Frame in 3D</button>
         <button onClick={() => (selectGroup(g.id), isolate(null))}>Isolate</button>
@@ -415,20 +629,44 @@ function GroupLightingField({ a, g, boardTemp }: { a: Artwork; g: ArtworkGroup; 
 // ——— One letter ———
 function ElementProps({ a, e }: { a: Artwork; e: ArtworkElement }) {
   const design = useDesign(),
+    layout = computeLayout(design),
     g = a.groups.find((x) => x.id === e.group)!,
-    placed = computeLayout(design).elements.find((x) => x.id === e.id),
+    gm = layout.groupMetrics[g.id],
+    placed = layout.elements.find((x) => x.id === e.id),
     resolved = resolveParams(e.type, g),
     effCol = elementFaceColour(e, g, design.settings),
     inheritedCol = g.faceColor ?? (e.type === 'halo' || e.type === 'metal' ? 'metal' : e.color);
+  const placedW = placed ? +(placed.bounds[2] - placed.bounds[0]).toFixed(1) : 100,
+    placedH = placed ? +(placed.bounds[3] - placed.bounds[1]).toFixed(1) : 100,
+    recipe = recipes[e.type],
+    placedDepth =
+      e.charDepth ??
+      (recipe.lit ? (placed?.params.depth ?? resolved.depth ?? 60) : (placed?.params.thickness ?? 0.15)),
+    hasCharOverride =
+      e.charHeight !== undefined ||
+      e.charWidth !== undefined ||
+      e.charDepth !== undefined ||
+      e.letterSpacing !== undefined;
   return (
     <div className="props">
       <div className="props-title">
         <Swatch colors={[effCol]} /> <b>{e.name}</b> <small>in {g.name}</small>
       </div>
+      {placed && (
+        <div className="units-banner">
+          <div>
+            <b>W × H:</b> {formatDimsAllUnits(placedW, placedH)}
+          </div>
+          <div>
+            <b>Depth:</b> {formatAllUnits(placedDepth)}
+            {gm ? ` · Group spacing: ${formatAllUnits(gm.letterGap)}` : ''}
+          </div>
+        </div>
+      )}
       <CrossSectionDiagram
         settings={design.settings}
         type={e.type}
-        params={resolved}
+        params={{ ...resolved, ...(recipe.lit ? { depth: placedDepth } : { thickness: placedDepth }) }}
         faceColor={effCol === 'metal' ? undefined : effCol}
         returnColor={g.returnColor}
       />
@@ -438,6 +676,91 @@ function ElementProps({ a, e }: { a: Artwork; e: ArtworkElement }) {
         onCommit={(v) => editArtwork((x) => renameElement(x, e.id, v))}
       />
       <GroupSelect a={a} value={e.group} ids={[e.id]} />
+      {placed && (
+        <div className="recipe">
+          <div className="sectionlabel">CHARACTER DIMENSIONS &amp; SPACING (mm / in / ft)</div>
+          <div className="pair">
+            <ScrubInput
+              label="Character height"
+              min={5}
+              max={4000}
+              step={1}
+              value={placedH}
+              onChange={(v, scrubbing) =>
+                editArtwork(
+                  (x) => setElements(x, [e.id], { charHeight: v }),
+                  `${e.name} height set to ${formatAllUnits(v)}.`,
+                  scrubbing ? `ech-${e.id}` : undefined,
+                )
+              }
+            />
+            <ScrubInput
+              label="Character width"
+              min={5}
+              max={4000}
+              step={1}
+              value={placedW}
+              onChange={(v, scrubbing) =>
+                editArtwork(
+                  (x) => setElements(x, [e.id], { charWidth: v }),
+                  `${e.name} width set to ${formatAllUnits(v)}.`,
+                  scrubbing ? `ecw-${e.id}` : undefined,
+                )
+              }
+            />
+          </div>
+          <div className="pair">
+            <ScrubInput
+              label="Character depth"
+              min={0.15}
+              max={200}
+              step={0.5}
+              value={placedDepth}
+              onChange={(v, scrubbing) =>
+                editArtwork(
+                  (x) => setElements(x, [e.id], { charDepth: v }),
+                  `${e.name} depth set to ${formatAllUnits(v)}.`,
+                  scrubbing ? `ecd-${e.id}` : undefined,
+                )
+              }
+            />
+            <ScrubInput
+              label="Character X offset"
+              min={-1000}
+              max={1000}
+              step={1}
+              value={e.letterSpacing ?? 0}
+              onChange={(v, scrubbing) =>
+                editArtwork(
+                  (x) => setElements(x, [e.id], { letterSpacing: v }),
+                  `${e.name} spacing offset set to ${formatAllUnits(v)}.`,
+                  scrubbing ? `els-${e.id}` : undefined,
+                )
+              }
+            />
+          </div>
+          {hasCharOverride && (
+            <button
+              type="button"
+              className="link"
+              onClick={() =>
+                editArtwork(
+                  (x) =>
+                    setElements(x, [e.id], {
+                      charHeight: null,
+                      charWidth: null,
+                      charDepth: null,
+                      letterSpacing: null,
+                    }),
+                  `${e.name} reset to group character dimensions and spacing.`,
+                )
+              }
+            >
+              Reset character size &amp; spacing to group defaults
+            </button>
+          )}
+        </div>
+      )}
       <div className="sectionlabel">LETTER CONSTRUCTION</div>
       <ConstructionPicker
         value={e.override ? e.type : 'inherit'}
@@ -466,6 +789,9 @@ function ElementProps({ a, e }: { a: Artwork; e: ArtworkElement }) {
           )
         }
       />
+      <button className="full accent" onClick={() => applySceneChanges(`${e.name} changes applied to 3D view.`)}>
+        ✓ Apply character changes
+      </button>
       <div className="row">
         <button onClick={() => viewer.current?.focusSelection()}>Frame in 3D</button>
         <button onClick={() => isolate(e.id)}>Isolate</button>
@@ -527,6 +853,9 @@ function MultiProps({ a, ids }: { a: Artwork; ids: string[] }) {
           )
         }
       />
+      <button className="full accent" onClick={() => applySceneChanges(`${ids.length} letters applied to 3D view.`)}>
+        ✓ Apply changes
+      </button>
       <div className="row">
         <button onClick={() => isolate(null)}>Isolate</button>
         <button onClick={() => toggleHidden(ids)}>Hide / show</button>
@@ -547,8 +876,11 @@ function GroupSelect({ a, value, ids }: { a: Artwork; value: string; ids: string
           if (v === '__new')
             editArtwork((x) => createGroup(x, '', ids).artwork, `New group from ${ids.length} letter(s).`);
           else if (v) {
-            const name = a.groups.find((g) => g.id === v)?.name;
-            editArtwork((x) => moveElements(x, ids, v), `Moved to ${name}.`);
+            const g = a.groups.find((grp) => grp.id === v);
+            editArtwork(
+              (x) => setElements(moveElements(x, ids, v), ids, { type: 'inherit' }),
+              `Moved to ${g?.name ?? v} (${g ? shortType[g.type] : ''}).`,
+            );
           }
         }}
       >
@@ -708,15 +1040,17 @@ function ColorField({
 // Size and the rear-to-front stack of one placed element, measured from the ACP face.
 function ElementDetails({ e, holes }: { e: ElementLayout; holes: number }) {
   const base = e.base,
+    w = e.bounds[2] - e.bounds[0],
+    h = e.bounds[3] - e.bounds[1],
+    proj = Math.max(...e.parts.map((p) => p.z1)) - base,
     mm = (n: number) => +n.toFixed(2);
   return (
     <>
       <b>{e.name}</b>
       <br />
-      {Math.round(e.bounds[2] - e.bounds[0])} × {Math.round(e.bounds[3] - e.bounds[1])} mm ·{' '}
-      {e.regions.length} region(s) / {holes} hole(s)
+      <b>W × H:</b> {formatDimsAllUnits(w, h)}
       <br />
-      {(e.perimeter / 1000).toFixed(3)} m contour perimeter
+      {e.regions.length} region(s) / {holes} hole(s) · {(e.perimeter / 1000).toFixed(3)} m contour perimeter
       <table className="stack">
         <tbody>
           {e.parts
@@ -729,15 +1063,15 @@ function ElementDetails({ e, holes }: { e: ElementLayout; holes: number }) {
                     {mm(p.z0 - base)}–{mm(p.z1 - base)} mm from fascia
                   </small>
                 </td>
-                <td>{mm(p.z1 - p.z0)} mm</td>
+                <td title={formatAllUnits(p.z1 - p.z0)}>{formatAllUnits(p.z1 - p.z0)}</td>
               </tr>
             ))}
           <tr>
             <td>
-              <b>Projection</b>
+              <b>Projection (Depth)</b>
             </td>
             <td>
-              <b>{mm(Math.max(...e.parts.map((p) => p.z1)) - base)} mm</b>
+              <b>{formatAllUnits(proj)}</b>
             </td>
           </tr>
         </tbody>
