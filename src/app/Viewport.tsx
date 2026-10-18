@@ -7,7 +7,17 @@ import { environments, type Environment } from '../domain/lighting.ts';
 import { computeLayout, sceneInput } from '../domain/layout.ts';
 import { fabricationPlan } from '../fabrication/plan.ts';
 import { setMode, viewer } from './actions.ts';
-import { getState, say, select, setView, showAll, useApp, useDesign, useView } from './store.ts';
+import {
+  getState,
+  say,
+  select,
+  setView,
+  toggleSelect,
+  showAll,
+  useApp,
+  useDesign,
+  useView,
+} from './store.ts';
 
 export function Viewport({ traceCanvas }: { traceCanvas: RefObject<HTMLCanvasElement | null> }) {
   const design = useDesign(),
@@ -22,7 +32,9 @@ export function Viewport({ traceCanvas }: { traceCanvas: RefObject<HTMLCanvasEle
 
   useEffect(() => {
     try {
-      viewer.current = new SignScene(host.current!, (id: string) => select(id));
+      viewer.current = new SignScene(host.current!, (id: string, add: boolean) =>
+        add ? toggleSelect(id) : select(id),
+      );
     } catch (e) {
       console.error(e);
       setNo3d(true);
@@ -74,6 +86,8 @@ export function Viewport({ traceCanvas }: { traceCanvas: RefObject<HTMLCanvasEle
     view.selected,
     view.selectionActive,
     view.presentation,
+    view.selection,
+    view.hidden,
   ]);
 
   // Reframe when what's on screen changes shape.
@@ -317,9 +331,12 @@ function TraceView({
       }
       ctx.setLineDash([]);
     }
+    const sel = new Set(view.selection.length ? view.selection : view.selected ? [view.selected] : []),
+      hiddenIds = new Set(view.hidden);
     for (const p of artwork.elements) {
-      ctx.strokeStyle = p.id === view.selected ? '#e58c3b' : p.type === 'omit' ? '#aab3aa' : '#3d8d87';
-      ctx.lineWidth = p.id === view.selected ? 2 : 1;
+      ctx.globalAlpha = hiddenIds.has(p.id) ? 0.25 : 1;
+      ctx.strokeStyle = sel.has(p.id) ? '#e58c3b' : p.type === 'omit' ? '#aab3aa' : '#3d8d87';
+      ctx.lineWidth = sel.has(p.id) ? 2 : 1;
       for (const r of p.regions)
         for (const loop of [r.outer, ...r.holes]) {
           ctx.beginPath();
@@ -330,7 +347,19 @@ function TraceView({
           ctx.stroke();
         }
     }
-  }, [hidden, art, design, fab, view.selected, view.environment, view.toolpaths, size]);
+    ctx.globalAlpha = 1;
+  }, [
+    hidden,
+    art,
+    design,
+    fab,
+    view.selected,
+    view.selection,
+    view.hidden,
+    view.environment,
+    view.toolpaths,
+    size,
+  ]);
 
   return (
     <canvas
@@ -345,7 +374,7 @@ function TraceView({
         const hit = [...artwork.elements]
           .reverse()
           .find((p) => p.regions.some((r) => inside(pt, r.outer) && !r.holes.some((h) => inside(pt, h))));
-        if (hit) select(hit.id);
+        if (hit) (e.shiftKey || e.metaKey || e.ctrlKey ? toggleSelect : select)(hit.id);
       }}
     />
   );

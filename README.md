@@ -29,6 +29,7 @@ Requires Node 20+.
 | `src/domain/assembly.ts` | Dependency-ordered assembly steps and the layers each reveals |
 | `src/fabrication/` | Return-strip bend schedules (`bending.ts`), tool compensation and cut checks (`cutting.ts`), fabrication plan + CSV (`plan.ts`), DXF via maker.js (`dxf.ts`) |
 | `src/editor/history.ts` | Immutable undo/redo over designs |
+| `src/editor/artworkOps.ts` | Structure edits: rename, create / move / merge / delete / reorder groups, constructions and colours |
 | `src/storage/project.ts` | Project file format v4, v1–v3 migration, validation, browser autosave |
 | `src/scene/scene.ts` | Three.js display of the layout (mm → m); HDR pipeline via pmndrs/postprocessing: exposure → bloom → AgX tone mapping; PBR finishes; stills |
 | `public/` | Static assets served at `/`: `kirat-logo.svg`, the Kirat Creations sample (Canva export) |
@@ -74,6 +75,13 @@ Milestone E (fabrication preview) done at geometric level:
 - DXF (maker.js, mm): *-OUTLINE and *-CUT layers for backs, faces, flat letters and vinyl; flat strips with BEND-CONVEX / BEND-CONCAVE lines and labels. Parts at sign positions, not nested.
 - Assembly: 10–11 dependency-ordered steps (frame → GI → backing → ACP; backs → returns → LEDs → faces; mount; power; test) with a parts list per step; play / previous / next / replay.
 - Not yet: bend allowance and machine calibration profiles, notching, acrylic heat-bending, nesting and offcut tracking, wiring diagram.
+
+Editor: the right panel has a **structure tree** (board → groups → letters) and a **properties** panel for the selection.
+
+- Tree: click, Ctrl/Cmd-click, Shift-click (range); double-click to rename; eye to hide/show a letter or group (view only); drag letters onto a group to move them; drag groups to reorder; group menu for isolate, move up/down, merge, delete empty; "+ Group" makes a group from the selection.
+- Properties: a group (name, construction, recipe dimensions, face colour, painted return colour, clear letter overrides), one letter (name, group, construction override, face colour override, dimensioned stack) or several letters (move, construction, colour, hide, isolate).
+- Colours: picker plus the logo's own colours and common sign colours; reset returns to artwork colours / bare metal. Group and letter colours are part of the design (undoable, saved).
+- 3D and 2D views: Ctrl/Cmd/Shift-click adds to the selection; isolate works on the whole selection.
 
 Known limits, deliberately left for later milestones: module/PSU ratings are placeholders until the verified atlas (F); no ACP seam or fixing pattern, cable holes in frame members, or wiring diagram (E); the face-retention method beyond trim cap (e.g. screws, inset) is not modelled.
 

@@ -21,6 +21,8 @@ import { frontLit, haloLit, recipes } from '../domain/recipes.ts';
 import { PSU_SIZE } from '../domain/layout.ts';
 
 const M = 0.001;
+const selectionOf = (s: { selection: string[]; selected: string | null }) =>
+  new Set(s.selection.length ? s.selection : s.selected ? [s.selected] : []);
 
 // Camera exposure, applied in HDR before bloom and tone mapping.
 class ExposureEffect extends Effect {
@@ -140,7 +142,7 @@ function bandGeometry(path: Point[], gauge: number, depth: number, progress: num
 
 export class SignScene {
   host: HTMLElement;
-  onSelect: (id: string) => void;
+  onSelect: (id: string, add: boolean) => void;
   renderer: T.WebGLRenderer;
   scene = new T.Scene();
   camera = new T.PerspectiveCamera(35, 1, 0.01, 100);
@@ -160,7 +162,7 @@ export class SignScene {
   worldParts: { id: string; regions: Region[] }[] = [];
   wall: T.Mesh | null = null;
 
-  constructor(host: HTMLElement, onSelect: (id: string) => void) {
+  constructor(host: HTMLElement, onSelect: (id: string, add: boolean) => void) {
     this.host = host;
     this.onSelect = onSelect;
     // Antialiasing comes from the composer's multisampling; tone mapping from the effect chain.
@@ -219,7 +221,7 @@ export class SignScene {
       const hit = ray
         .intersectObjects(this.group.children, true)
         .find((h) => h.object.userData.part && h.object.visible && h.object.parent?.visible);
-      if (hit) this.onSelect(hit.object.userData.part);
+      if (hit) this.onSelect(hit.object.userData.part, e.shiftKey || e.metaKey || e.ctrlKey);
     });
     new ResizeObserver(() => this.resize()).observe(host);
     this.resize();
@@ -264,7 +266,17 @@ export class SignScene {
 
   // Physically based finishes. Values are presentation estimates, not measured BRDFs.
   finish(
-    kind: 'acp' | 'gi' | 'frame' | 'aluminium' | 'stainless' | 'acrylic' | 'trim' | 'vinyl' | 'paint',
+    kind:
+      | 'painted'
+      | 'acp'
+      | 'gi'
+      | 'frame'
+      | 'aluminium'
+      | 'stainless'
+      | 'acrylic'
+      | 'trim'
+      | 'vinyl'
+      | 'paint',
     color?: T.ColorRepresentation,
   ) {
     const P = (o: T.MeshPhysicalMaterialParameters) =>
@@ -280,6 +292,8 @@ export class SignScene {
         return P({ color: color ?? '#c5ccd0', metalness: 1, roughness: 0.32 });
       case 'stainless':
         return P({ color: '#cdd3d6', metalness: 1, roughness: 0.24 });
+      case 'painted': // powder-coated / painted metal
+        return P({ color, metalness: 0.2, roughness: 0.38, clearcoat: 0.3, clearcoatRoughness: 0.3 });
       case 'acrylic': // glossy cast acrylic surface
         return P({ color, metalness: 0, roughness: 0.22, clearcoat: 1, clearcoatRoughness: 0.04 });
       case 'trim':
@@ -433,7 +447,9 @@ export class SignScene {
       depth = (p.z1 - p.z0) * M,
       z0 = p.z0 * M,
       shapes = regions.map(shapeFromRegion);
-    const art = st.keepart && this.texture;
+    // Face colour: the letter's/group's chosen colour, else the artwork's own colours, else the default.
+    const art = !e.faceColor && st.keepart && this.texture,
+      base = e.faceColor ?? (art ? '#ffffff' : st.facecolor);
     const extrude = (mat: T.Material, textured: boolean) => {
       const g = new T.ExtrudeGeometry(shapes, {
         depth,
@@ -458,12 +474,14 @@ export class SignScene {
     };
     const ledColour = kelvinToHex(st.ledTemp),
       glow = emission(lit, s.dimming);
+    // Bare stainless unless a colour is chosen, then painted metal.
+    const metalFace = () => (e.faceColor ? this.finish('painted', e.faceColor) : this.finish('stainless'));
     const faceMat = () => {
-      const m = this.finish('acrylic', art ? '#ffffff' : st.facecolor) as T.MeshPhysicalMaterial;
+      const m = this.finish('acrylic', base) as T.MeshPhysicalMaterial;
       if (art) m.map = this.texture;
       if (frontLit(e.type) && lit) {
         // Light through the face = LED colour × face colour (artwork texture or uniform colour).
-        m.emissive.set(ledColour).multiply(new T.Color(art ? '#ffffff' : st.facecolor));
+        m.emissive.set(ledColour).multiply(new T.Color(base));
         m.emissiveIntensity = glow;
         if (art) m.emissiveMap = this.texture;
       }
@@ -523,13 +541,19 @@ export class SignScene {
           m.emissiveIntensity = glow * 0.6; // sides pass less light than the face
         }
         ring(e.params.gauge * M, m);
-      } else ring(e.params.gauge * M, this.finish('aluminium'));
+      } else
+        ring(
+          e.params.gauge * M,
+          e.returnColor ? this.finish('painted', e.returnColor) : this.finish('aluminium'),
+        );
     } else if (p.kind === 'trim') ring((2 * e.params.trimcap + e.params.gauge) * M, this.finish('trim'));
-    else if (p.kind === 'face')
-      extrude(e.type === 'halo' ? this.finish('stainless') : faceMat(), e.type !== 'halo');
-    else if (e.type === 'metal') extrude(this.finish('stainless'), false);
-    else if (e.type === 'vinyl') extrude(this.finish('vinyl', st.facecolor), false);
-    else extrude(faceMat(), true);
+    else if (p.kind === 'face') extrude(e.type === 'halo' ? metalFace() : faceMat(), e.type !== 'halo');
+    else if (e.type === 'metal') extrude(metalFace(), false);
+    else if (e.type === 'vinyl') {
+      const m = this.finish('vinyl', base) as T.MeshPhysicalMaterial;
+      if (art) m.map = this.texture;
+      extrude(m, !!art);
+    } else extrude(faceMat(), true);
   }
 
   // Placeholder PSUs in the frame bay and cable runs from each lit letter.
@@ -633,23 +657,26 @@ export class SignScene {
   }
 
   setVisibility(s: SceneInput) {
+    const sel = selectionOf(s),
+      hidden = new Set(s.hidden);
     LAYERS.forEach((l, i) => {
       const g = this.layers.get(l.id)!,
         shown = s.visibleLayers.has(l.id) && s.layers[i] !== false;
       g.position.z = (s.explode / 100) * i * EXPLODE_STEP;
-      if (s.isolate && s.selected) {
+      if (s.isolate && sel.size) {
         g.visible = l.kind === 'letter' && shown;
-        g.children.forEach((o) => (o.visible = o.userData.part === s.selected));
+        g.children.forEach((o) => (o.visible = sel.has(o.userData.part) && !hidden.has(o.userData.part)));
       } else {
         g.visible = shown;
-        g.children.forEach((o) => (o.visible = true));
+        g.children.forEach((o) => (o.visible = !hidden.has(o.userData.part)));
       }
     });
-    this.highlight(s.selected);
+    this.highlight();
     this.draw();
   }
 
-  highlight(id: string | null) {
+  // Outline every selected element at the top of what is visible. Pass `false` to clear.
+  highlight(show = true) {
     if (this.outline) {
       this.group.remove(this.outline);
       this.outline.geometry.dispose();
@@ -657,21 +684,24 @@ export class SignScene {
       this.outline = null;
     }
     const s = this.state;
-    if (!id || !s || s.mode === 'bend' || s.presentation || !s.selectionActive) return;
-    const part = this.worldParts.find((p) => p.id === id);
-    if (!part) return;
-    let top = -Infinity;
-    for (const layer of this.layers.values()) {
-      if (!layer.visible) continue;
-      for (const o of layer.children)
-        if (o.visible && o.userData.part === id) top = Math.max(top, new T.Box3().setFromObject(o).max.z);
+    if (!show || !s || s.mode === 'bend' || s.presentation || !s.selectionActive) return;
+    const sel = selectionOf(s),
+      vs: number[] = [];
+    for (const part of this.worldParts.filter((p) => sel.has(p.id))) {
+      let top = -Infinity;
+      for (const layer of this.layers.values()) {
+        if (!layer.visible) continue;
+        for (const o of layer.children)
+          if (o.visible && o.userData.part === part.id)
+            top = Math.max(top, new T.Box3().setFromObject(o).max.z);
+      }
+      if (!Number.isFinite(top)) continue;
+      for (const r of part.regions)
+        for (const loop of [r.outer, ...r.holes])
+          for (let i = 0; i < loop.length; i++)
+            vs.push(...loop[i], top + 0.001, ...loop[(i + 1) % loop.length], top + 0.001);
     }
-    if (!Number.isFinite(top)) return;
-    const vs: number[] = [];
-    for (const r of part.regions)
-      for (const loop of [r.outer, ...r.holes])
-        for (let i = 0; i < loop.length; i++)
-          vs.push(...loop[i], top + 0.001, ...loop[(i + 1) % loop.length], top + 0.001);
+    if (!vs.length) return;
     const g = new T.BufferGeometry();
     g.setAttribute('position', new T.Float32BufferAttribute(vs, 3));
     this.outline = new T.LineSegments(
@@ -732,11 +762,11 @@ export class SignScene {
       depth = size.z;
     }
     if (s.isolate && s.mode !== 'bend') {
+      const sel = selectionOf(s);
       const bounds = new T.Box3();
       for (const layer of this.layers.values()) {
         if (!layer.visible) continue;
-        for (const o of layer.children)
-          if (o.visible && o.userData.part === s.selected) bounds.expandByObject(o);
+        for (const o of layer.children) if (o.visible && sel.has(o.userData.part)) bounds.expandByObject(o);
       }
       if (!bounds.isEmpty()) {
         bounds.getCenter(center);
@@ -769,7 +799,7 @@ export class SignScene {
     const s = this.state!,
       size = this.renderer.getSize(new T.Vector2()),
       ratio = this.renderer.getPixelRatio();
-    this.highlight(null);
+    this.highlight(false);
     this.renderer.setPixelRatio(1);
     this.renderer.setSize(width, height, false);
     this.composer.setSize(width, height);
@@ -790,7 +820,7 @@ export class SignScene {
     this.camera.lookAt(target);
     this.renderer.setPixelRatio(ratio);
     this.setEnvironment(s);
-    this.highlight(s.selected);
+    this.highlight();
     this.renderer.setSize(size.x, size.y, false);
     this.resize();
     return url;

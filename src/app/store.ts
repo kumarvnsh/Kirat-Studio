@@ -95,17 +95,59 @@ export function showAll(
   });
   say(message);
 }
+// Isolate the current selection (or one element). View only.
 export function isolate(id: string | null) {
-  const el = state.design.present.artwork?.elements.find((e) => e.id === id && e.type !== 'omit');
-  if (!el) return say('Select a visible artwork element first.');
+  const elements = state.design.present.artwork?.elements ?? [],
+    ids = (state.view.selection.length ? state.view.selection : id ? [id] : []).filter((x) =>
+      elements.some((e) => e.id === x && e.type !== 'omit'),
+    );
+  if (!ids.length) return say('Select a visible artwork element first.');
   setView({
-    selected: el.id,
+    selected: ids.includes(state.view.selected ?? '') ? state.view.selected : ids[0],
+    selection: ids,
     mode: '3d',
     isolate: true,
     step: ALL_STEPS,
     layers: Array(LAYER_COUNT).fill(true),
     selectionActive: true,
   });
-  say('Element isolated. Use Show all above the scene or press Esc to return.');
+  say(
+    `${ids.length > 1 ? ids.length + ' elements' : 'Element'} isolated. Use Show all above the scene or press Esc to return.`,
+  );
 }
-export const select = (id: string) => setView({ selected: id, selectionActive: true });
+
+// Selection. `selected` is the primary element; `selection` all selected elements.
+export const select = (id: string) =>
+  setView({ selected: id, selection: [id], selectedGroup: null, selectionActive: true });
+export function selectMany(ids: string[], primary = ids[ids.length - 1] ?? null) {
+  setView({ selected: primary, selection: ids, selectedGroup: null, selectionActive: ids.length > 0 });
+}
+// Add or remove one element (Ctrl/Cmd/Shift-click in the views).
+export function toggleSelect(id: string) {
+  const cur = state.view.selection.length
+    ? state.view.selection
+    : state.view.selected
+      ? [state.view.selected]
+      : [];
+  const next = cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id];
+  selectMany(next, next.includes(id) ? id : (next[next.length - 1] ?? null));
+}
+export const selectionIds = (v: { selection: string[]; selected: string | null }) =>
+  v.selection.length ? v.selection : v.selected ? [v.selected] : [];
+export function selectGroup(groupId: string) {
+  const ids = (state.design.present.artwork?.elements ?? [])
+    .filter((e) => e.group === groupId)
+    .map((e) => e.id);
+  setView({
+    selected: ids[0] ?? null,
+    selection: ids,
+    selectedGroup: groupId,
+    selectionActive: ids.length > 0,
+  });
+}
+export function toggleHidden(ids: string[]) {
+  const hidden = new Set(state.view.hidden),
+    hide = ids.some((id) => !hidden.has(id));
+  ids.forEach((id) => (hide ? hidden.add(id) : hidden.delete(id)));
+  setView({ hidden: [...hidden] });
+}

@@ -24,6 +24,8 @@ export type ElementLayout = {
   type: ConstructionType;
   group: string;
   params: Record<string, number>;
+  faceColor?: string; // resolved: letter override, else group colour; unset = artwork colours
+  returnColor?: string; // painted returns; unset = natural metal
   regions: Region[];
   bounds: [number, number, number, number]; // x0, y0, x1, y1
   perimeter: number; // all outer and inner contours
@@ -166,10 +168,8 @@ export function computeLayout(design: DesignState): Layout {
     for (const e of a.elements) {
       if (e.type === 'omit') continue;
       const recipe = recipes[e.type],
-        params = resolveParams(
-          e.type,
-          a.groups.find((g) => g.id === e.group),
-        ),
+        group = a.groups.find((g) => g.id === e.group),
+        params = resolveParams(e.type, group),
         regions = e.regions.map((r) => ({ outer: r.outer.map(map), holes: r.holes.map((h) => h.map(map)) })),
         m = recipe.materials;
       const parts: LetterPart[] = [];
@@ -209,6 +209,8 @@ export function computeLayout(design: DesignState): Layout {
         type: e.type,
         group: e.group,
         params,
+        faceColor: e.faceColor ?? group?.faceColor,
+        returnColor: group?.returnColor,
         regions,
         bounds: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)],
         perimeter: loops.reduce((n, l) => n + perimeter(l), 0),

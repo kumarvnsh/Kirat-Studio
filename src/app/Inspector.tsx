@@ -1,173 +1,114 @@
-import { useState, type KeyboardEvent } from 'react';
+// Right-hand panel: the structure tree, then properties for whatever is selected —
+// a whole group, one letter, or several letters.
+import { useEffect, useRef, type KeyboardEvent } from 'react';
 import { computeLayout, type ElementLayout } from '../domain/layout.ts';
 import { checkParams, recipes, resolveParams } from '../domain/recipes.ts';
-import { constructionNames, type Artwork, type ConstructionType } from '../domain/project.ts';
-import { applyConstruction, type ApplyScope } from './actions.ts';
-import { editDesign, isolate, say, select, showAll, useDesign, useView } from './store.ts';
+import type { Artwork, ArtworkElement, ArtworkGroup, ConstructionType } from '../domain/project.ts';
+import {
+  artworkPalette,
+  createGroup,
+  moveElements,
+  renameElement,
+  renameGroup,
+  setElements,
+  setGroup,
+} from '../editor/artworkOps.ts';
+import {
+  isolate,
+  say,
+  selectGroup,
+  selectionIds,
+  showAll,
+  toggleHidden,
+  useDesign,
+  useView,
+} from './store.ts';
+import { editArtwork, groupColours, shortType, StructureTree, Swatch } from './Structure.tsx';
 
-const label = (e: { type: ConstructionType; override: boolean }) =>
-  constructionNames[e.type] + (e.override ? ' (override)' : '');
-
-// Edit one artwork as a single undoable step.
-const editArtwork = (fn: (a: Artwork) => Artwork, message?: string) =>
-  editDesign((d) => (d.artwork ? { ...d, artwork: fn(d.artwork) } : d), message);
+const TYPES = Object.keys(shortType) as ConstructionType[];
+const SIGN_COLOURS = ['#ffffff', '#111111', '#d32f2f', '#f9a825', '#ff9e35', '#1e88e5', '#2e7d32', '#6a1b9a'];
 
 export function Inspector() {
   const design = useDesign(),
-    artwork = design.artwork,
+    a = design.artwork,
     view = useView();
-  const el = artwork?.elements.find((e) => e.id === view.selected);
-  const group = el && artwork!.groups.find((g) => g.id === el.group);
-  const placed = el && computeLayout(design).elements.find((e) => e.id === el.id);
-  const [type, setType] = useState<ConstructionType | null>(null);
-  const [scope, setScope] = useState<ApplyScope>('group');
-  const shownType = type ?? el?.type ?? 'front';
-
-  const rename = (value: string) => {
-    if (el && value.trim() && value.trim() !== el.name)
-      editArtwork((a) => ({
-        ...a,
-        elements: a.elements.map((e) => (e.id === el.id ? { ...e, name: value.trim() } : e)),
-      }));
-  };
-  const renameGroup = (value: string) => {
-    if (group && value.trim() && value.trim() !== group.name)
-      editArtwork((a) => ({
-        ...a,
-        groups: a.groups.map((g) => (g.id === group.id ? { ...g, name: value.trim() } : g)),
-      }));
-  };
-  const moveTo = (gid: string) => {
-    if (!el || !artwork) return;
-    let groups = artwork.groups,
-      target = groups.find((g) => g.id === gid);
-    if (!target) {
-      const n = Math.max(0, ...groups.map((g) => +g.id.slice(1) || 0)) + 1;
-      target = { id: 'g' + n, name: 'Group ' + n, type: el.type };
-      groups = [...groups, target];
-    }
-    const t = target;
-    const elements = artwork.elements.map((e) =>
-      e.id === el.id ? { ...e, group: t.id, override: e.type !== t.type } : e,
-    );
-    editArtwork(
-      (a) => ({ ...a, elements, groups: groups.filter((g) => elements.some((e) => e.group === g.id)) }),
-      `Moved ${el.name} to ${t.name}.`,
-    );
-  };
-
-  const setParam = (key: string, value: number) => {
-    if (!group || resolveParams(group.type, group)[key] === value) return;
-    const params = { ...group.params, [key]: value },
-      bad = checkParams(group.type, params);
-    if (bad) return say(bad);
-    editArtwork(
-      (a) => ({ ...a, groups: a.groups.map((g) => (g.id === group.id ? { ...g, params } : g)) }),
-      `${group.name}: ${recipes[group.type].params[key].label} set to ${value} mm.`,
-    );
-  };
-
-  const holes = (e: NonNullable<typeof el>) => e.regions.reduce((n, r) => n + r.holes.length, 0);
-  // Remount name inputs per element so defaultValue follows the selection.
-  const k = (el?.id ?? '') + '|' + (el?.name ?? '') + '|' + (group?.name ?? '');
-
+  const ids = selectionIds(view).filter((id) => a?.elements.some((e) => e.id === id)),
+    group = view.selectedGroup ? a?.groups.find((g) => g.id === view.selectedGroup) : undefined;
   return (
     <aside className="inspector">
-      <div className="eyebrow">ELEMENT INSPECTOR</div>
-      <h2>Make it your way.</h2>
-      <p className="muted">Select a shape in the scene, trace or list.</p>
-      <label>
-        Artwork element
-        <select value={el?.id ?? ''} onChange={(e) => (setType(null), select(e.target.value))}>
-          {!artwork && <option>No artwork yet</option>}
-          {artwork?.elements.map((e) => (
-            <option key={e.id} value={e.id}>
-              {e.name} · {label(e)}
-            </option>
-          ))}
-        </select>
-      </label>
-      {el && (
-        <>
-          <label>
-            Element name
-            <input
-              key={'n' + k}
-              defaultValue={el.name}
-              maxLength={50}
-              onBlur={(e) => rename(e.target.value)}
-              onKeyDown={blurOnEnter}
-            />
-          </label>
-          <label>
-            Artwork group
-            <select value={el.group} onChange={(e) => moveTo(e.target.value)}>
-              {artwork!.groups.map((g) => (
-                <option key={g.id} value={g.id}>
-                  {g.name} · {constructionNames[g.type]}
-                </option>
-              ))}
-              <option value="__new">+ New group</option>
-            </select>
-          </label>
-          <label>
-            Group name
-            <input
-              key={'g' + k}
-              defaultValue={group?.name}
-              maxLength={50}
-              onBlur={(e) => renameGroup(e.target.value)}
-              onKeyDown={blurOnEnter}
-            />
-          </label>
-        </>
+      <div className="eyebrow">STRUCTURE</div>
+      <StructureTree />
+      <div className="eyebrow props-head">PROPERTIES</div>
+      {!a ? null : group ? (
+        <GroupProps a={a} g={group} />
+      ) : ids.length > 1 ? (
+        <MultiProps a={a} ids={ids} />
+      ) : ids.length === 1 ? (
+        <ElementProps a={a} e={a.elements.find((e) => e.id === ids[0])!} />
+      ) : (
+        <p className="muted">Select a group or letter in the tree, the 3D view or the 2D trace.</p>
       )}
-      <label>
-        Construction
-        <select value={shownType} onChange={(e) => setType(e.target.value as ConstructionType)}>
-          <option value="front">Front-lit channel letter</option>
-          <option value="halo">Halo-lit metal letter</option>
-          <option value="fronthalo">Front + halo letter</option>
-          <option value="fullacrylic">Full acrylic letter</option>
-          <option value="acrylic">Flat acrylic</option>
-          <option value="metal">Flat metal</option>
-          <option value="acplogo">Flat ACP logo</option>
-          <option value="vinyl">Printed / cut vinyl</option>
-          <option value="omit">Exclude from sign</option>
-        </select>
-      </label>
-      <label>
-        Apply to
-        <select value={scope} onChange={(e) => setScope(e.target.value as ApplyScope)}>
-          <option value="group">Whole group</option>
-          <option value="selected">This element only (override)</option>
-          <option value="all">All artwork elements</option>
-        </select>
-      </label>
-      <button
-        className="full accent"
-        onClick={() => {
-          applyConstruction(shownType, scope);
-          setType(null);
-        }}
-      >
-        Apply construction
-      </button>
-      {el && group && !el.override && Object.keys(recipes[el.type].params).length > 0 && (
+      {view.isolate && (
+        <button className="full" onClick={() => showAll()}>
+          Exit isolate · show all
+        </button>
+      )}
+      <div className="callout small">
+        Lighting placement is symbolic and uncalculated. Returns have a nominal wall gauge; selected profiles,
+        fixings and tolerances still need fabrication validation.
+      </div>
+    </aside>
+  );
+}
+
+// ——— Group ———
+function GroupProps({ a, g }: { a: Artwork; g: ArtworkGroup }) {
+  const els = a.elements.filter((e) => e.group === g.id),
+    ids = els.map((e) => e.id),
+    overrides = els.filter((e) => e.override || e.faceColor).length,
+    recipe = recipes[g.type];
+  const setParam = (key: string, value: number) => {
+    if (resolveParams(g.type, g)[key] === value) return;
+    const bad = checkParams(g.type, { ...g.params, [key]: value });
+    if (bad) return say(bad);
+    editArtwork(
+      (x) => setGroup(x, g.id, { params: { [key]: value } }),
+      `${g.name}: ${recipe.params[key].label} set to ${value} mm.`,
+    );
+  };
+  return (
+    <div className="props">
+      <div className="props-title">
+        <Swatch colors={groupColours(a, g)} /> <b>{g.name}</b> <small>group · {els.length} letters</small>
+      </div>
+      <TextField
+        label="Group name"
+        value={g.name}
+        onCommit={(v) => editArtwork((x) => renameGroup(x, g.id, v))}
+      />
+      <TypeSelect
+        label="Construction"
+        value={g.type}
+        onChange={(t) =>
+          editArtwork(
+            (x) => setGroup(x, g.id, { type: t as ConstructionType }),
+            `${g.name} set to ${recipes[t as ConstructionType].name}.`,
+          )
+        }
+      />
+      {Object.keys(recipe.params).length > 0 && (
         <div className="recipe">
-          <div className="sectionlabel">
-            {group.name.toUpperCase()} · {recipes[el.type].name.toUpperCase()} / mm
-          </div>
+          <div className="sectionlabel">{recipe.name.toUpperCase()} / mm</div>
           <div className="pair">
-            {Object.entries(recipes[el.type].params).map(([key, p]) => (
-              <label key={key + k + JSON.stringify(group.params)}>
+            {Object.entries(recipe.params).map(([key, p]) => (
+              <label key={key + g.id + g.type + JSON.stringify(g.params)}>
                 {p.label}
                 <input
                   type="number"
                   min={p.min}
                   max={p.max}
                   step={p.step}
-                  defaultValue={resolveParams(el.type, group)[key]}
+                  defaultValue={resolveParams(g.type, g)[key]}
                   onBlur={(e) => setParam(key, +e.target.value)}
                   onKeyDown={blurOnEnter}
                 />
@@ -176,51 +117,277 @@ export function Inspector() {
           </div>
         </div>
       )}
-      {el?.override && (
-        <p className="muted">This element overrides its group and uses {recipes[el.type].name} defaults.</p>
+      <ColorField
+        label={g.type === 'halo' || g.type === 'metal' ? 'Face colour (painted)' : 'Face colour'}
+        value={g.faceColor}
+        fallback={g.type === 'halo' || g.type === 'metal' ? 'Bare metal' : 'Artwork colours'}
+        palette={artworkPalette(a)}
+        onCommit={(c) =>
+          editArtwork(
+            (x) => setGroup(x, g.id, { faceColor: c }),
+            c ? `${g.name} face colour ${c}.` : `${g.name} uses artwork colours.`,
+          )
+        }
+      />
+      {recipe.lit && (
+        <ColorField
+          label="Return colour"
+          value={g.returnColor}
+          fallback="Natural metal"
+          palette={artworkPalette(a)}
+          onCommit={(c) =>
+            editArtwork(
+              (x) => setGroup(x, g.id, { returnColor: c }),
+              c ? `${g.name} returns painted ${c}.` : `${g.name} returns natural metal.`,
+            )
+          }
+        />
       )}
-      <button
-        className="full"
-        aria-pressed={view.isolate}
-        onClick={() => (view.isolate ? showAll() : isolate(view.selected))}
-      >
-        {view.isolate ? 'Exit isolate · show all' : 'Isolate selected element'}
-      </button>
+      {overrides > 0 && (
+        <button
+          className="full"
+          onClick={() =>
+            editArtwork(
+              (x) => setElements(x, ids, { type: 'inherit', faceColor: null }),
+              `${g.name}: letter overrides cleared.`,
+            )
+          }
+        >
+          Clear {overrides} letter override{overrides > 1 ? 's' : ''}
+        </button>
+      )}
+      <div className="row">
+        <button onClick={() => (selectGroup(g.id), isolate(null))}>Isolate</button>
+        <button onClick={() => toggleHidden(ids)}>Hide / show</button>
+      </div>
+    </div>
+  );
+}
+
+// ——— One letter ———
+function ElementProps({ a, e }: { a: Artwork; e: ArtworkElement }) {
+  const design = useDesign(),
+    g = a.groups.find((x) => x.id === e.group)!,
+    placed = computeLayout(design).elements.find((x) => x.id === e.id);
+  return (
+    <div className="props">
+      <div className="props-title">
+        <Swatch colors={[e.faceColor ?? g.faceColor ?? e.color]} /> <b>{e.name}</b> <small>in {g.name}</small>
+      </div>
+      <TextField
+        label="Name"
+        value={e.name}
+        onCommit={(v) => editArtwork((x) => renameElement(x, e.id, v))}
+      />
+      <GroupSelect a={a} value={e.group} ids={[e.id]} />
+      <TypeSelect
+        label="Construction"
+        value={e.override ? e.type : 'inherit'}
+        inherit={`Same as group (${shortType[g.type]})`}
+        onChange={(t) =>
+          editArtwork((x) => setElements(x, [e.id], { type: t as ConstructionType | 'inherit' }))
+        }
+      />
+      <ColorField
+        label="Face colour"
+        value={e.faceColor}
+        fallback={g.faceColor ? `Group colour` : 'Artwork colour'}
+        palette={artworkPalette(a)}
+        onCommit={(c) => editArtwork((x) => setElements(x, [e.id], { faceColor: c }))}
+      />
+      <div className="row">
+        <button onClick={() => isolate(e.id)}>Isolate</button>
+        <button onClick={() => toggleHidden([e.id])}>Hide / show</button>
+      </div>
       <div className="callout">
         {placed ? (
-          <ElementDetails e={placed} holes={holes(el!)} />
-        ) : el ? (
-          <>
-            <b>{el.name}</b> is excluded from the sign.
-          </>
+          <ElementDetails e={placed} holes={e.regions.reduce((n, r) => n + r.holes.length, 0)} />
         ) : (
-          'Each artwork group (symbol, wordmark, tagline) shares one construction. Override single elements if needed.'
+          <>
+            <b>{e.name}</b> is excluded from the sign.
+          </>
         )}
       </div>
-      <div className="sectionlabel">ARTWORK ELEMENTS</div>
-      <div id="elementlist">
-        {artwork?.elements.map((e) => (
-          <button
-            key={e.id}
-            className={'element' + (e.id === view.selected ? ' active' : '')}
-            onClick={() => (setType(null), select(e.id))}
-          >
-            <i style={{ background: e.color }} />
-            <span>
-              {e.name}
-              <small>
-                {artwork.groups.find((g) => g.id === e.group)?.name} · {label(e)}
-              </small>
-            </span>
-            <em>{holes(e)} holes</em>
-          </button>
+    </div>
+  );
+}
+
+// ——— Several letters ———
+function MultiProps({ a, ids }: { a: Artwork; ids: string[] }) {
+  const els = a.elements.filter((e) => ids.includes(e.id)),
+    groups = [...new Set(els.map((e) => e.group))].map((id) => a.groups.find((g) => g.id === id)!);
+  return (
+    <div className="props">
+      <div className="props-title">
+        <Swatch colors={[...new Set(els.map((e) => e.faceColor ?? e.color))].slice(0, 4)} />{' '}
+        <b>{ids.length} letters</b> <small>from {groups.map((g) => g.name).join(', ')}</small>
+      </div>
+      <GroupSelect a={a} value={groups.length === 1 ? groups[0].id : ''} ids={ids} />
+      <TypeSelect
+        label="Construction"
+        value=""
+        inherit="Same as their group"
+        placeholder="— change construction —"
+        onChange={(t) =>
+          editArtwork(
+            (x) => setElements(x, ids, { type: t as ConstructionType | 'inherit' }),
+            `${ids.length} letters updated.`,
+          )
+        }
+      />
+      <ColorField
+        label="Face colour"
+        value={undefined}
+        fallback="Their own / group colours"
+        palette={artworkPalette(a)}
+        onCommit={(c) =>
+          editArtwork((x) => setElements(x, ids, { faceColor: c }), `${ids.length} letters recoloured.`)
+        }
+      />
+      <div className="row">
+        <button onClick={() => isolate(null)}>Isolate</button>
+        <button onClick={() => toggleHidden(ids)}>Hide / show</button>
+      </div>
+    </div>
+  );
+}
+
+// ——— Fields ———
+function GroupSelect({ a, value, ids }: { a: Artwork; value: string; ids: string[] }) {
+  return (
+    <label>
+      Group
+      <select
+        value={value}
+        onChange={(ev) => {
+          const v = ev.target.value;
+          if (v === '__new')
+            editArtwork((x) => createGroup(x, '', ids).artwork, `New group from ${ids.length} letter(s).`);
+          else if (v) {
+            const name = a.groups.find((g) => g.id === v)?.name;
+            editArtwork((x) => moveElements(x, ids, v), `Moved to ${name}.`);
+          }
+        }}
+      >
+        {!value && <option value="">— move to group —</option>}
+        {a.groups.map((g) => (
+          <option key={g.id} value={g.id}>
+            {g.name} · {shortType[g.type]}
+          </option>
         ))}
+        <option value="__new">+ New group</option>
+      </select>
+    </label>
+  );
+}
+
+function TypeSelect({
+  label,
+  value,
+  inherit,
+  placeholder,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  inherit?: string;
+  placeholder?: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <label>
+      {label}
+      <select value={value} onChange={(e) => e.target.value && onChange(e.target.value)}>
+        {placeholder && <option value="">{placeholder}</option>}
+        {inherit && <option value="inherit">{inherit}</option>}
+        {TYPES.map((t) => (
+          <option key={t} value={t}>
+            {recipes[t].name}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function TextField({
+  label,
+  value,
+  onCommit,
+}: {
+  label: string;
+  value: string;
+  onCommit: (v: string) => void;
+}) {
+  return (
+    <label>
+      {label}
+      <input
+        key={value}
+        defaultValue={value}
+        maxLength={60}
+        onBlur={(e) => e.target.value.trim() !== value && onCommit(e.target.value)}
+        onKeyDown={blurOnEnter}
+      />
+    </label>
+  );
+}
+
+// Colour picker that commits once when the picker closes (one undo step), plus quick swatches:
+// the artwork's own colours and common sign colours. `null` = back to the fallback.
+function ColorField({
+  label,
+  value,
+  fallback,
+  palette,
+  onCommit,
+}: {
+  label: string;
+  value: string | undefined;
+  fallback: string;
+  palette: string[];
+  onCommit: (c: string | null) => void;
+}) {
+  const input = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    const el = input.current!,
+      done = () => onCommit(el.value);
+    el.addEventListener('change', done);
+    return () => el.removeEventListener('change', done);
+  }, [onCommit]);
+  const swatches = [...new Set([...palette, ...SIGN_COLOURS])].slice(0, 14);
+  return (
+    <div className="colorfield">
+      <div className="colorfield-head">
+        <span>{label}</span>
+        <small>{value ?? fallback}</small>
       </div>
-      <div className="callout small">
-        Lighting placement is symbolic and uncalculated. Returns have a nominal wall gauge; selected profiles,
-        fixings and tolerances still need fabrication validation.
+      <div className="colorfield-row">
+        <input
+          ref={input}
+          key={value ?? 'none'}
+          type="color"
+          defaultValue={value ?? '#ffffff'}
+          aria-label={label}
+        />
+        <div className="chips">
+          {swatches.map((c) => (
+            <button
+              key={c}
+              className={'chip' + (c === value ? ' on' : '')}
+              style={{ background: c }}
+              title={c}
+              onClick={() => onCommit(c)}
+            />
+          ))}
+        </div>
       </div>
-    </aside>
+      {value && (
+        <button className="link" onClick={() => onCommit(null)}>
+          Reset to {fallback.toLowerCase()}
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -263,7 +430,6 @@ function ElementDetails({ e, holes }: { e: ElementLayout; holes: number }) {
       </table>
       {e.leds.length > 0 && <small>{e.leds.length} symbolic LED positions. </small>}
       {e.fixings.length > 0 && <small>{e.fixings.length} fixing points. </small>}
-      <small>Perimeter is not a compensated strip cut length.</small>
     </>
   );
 }

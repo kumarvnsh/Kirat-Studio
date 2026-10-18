@@ -120,6 +120,7 @@ function fromFlatState(s: any, version: 1 | 2): any {
 const finite = (n: unknown, lo: number, hi: number) =>
   typeof n === 'number' && Number.isFinite(n) && n >= lo && n <= hi;
 const isType = (t: unknown) => typeof t === 'string' && Object.hasOwn(constructionNames, t);
+const optColour = (c: unknown) => c === undefined || (typeof c === 'string' && /^#[0-9a-f]{6}$/i.test(c));
 const isId = (id: unknown) => typeof id === 'string' && /^[\w-]{1,60}$/.test(id);
 
 export function validateDesign(d: DesignState) {
@@ -160,14 +161,22 @@ function validateArtwork(a: Artwork) {
       typeof g.name !== 'string' ||
       g.name.length > 60 ||
       !isType(g.type) ||
-      (g.params !== undefined && (typeof g.params !== 'object' || checkParams(g.type, g.params)))
+      (g.params !== undefined && (typeof g.params !== 'object' || checkParams(g.type, g.params))) ||
+      !optColour(g.faceColor) ||
+      !optColour(g.returnColor)
     )
       throw Error('Invalid artwork group' + (g.params ? ': ' + checkParams(g.type, g.params) : '.'));
   if (!Array.isArray(a.elements) || a.elements.length > 100)
     throw Error('Project exceeds the 100-shape limit.');
   let points = 0;
   for (const e of a.elements) {
-    if (!isId(e.id) || !isType(e.type) || !/^#[0-9a-f]{6}$/i.test(e.color) || typeof e.name !== 'string')
+    if (
+      !isId(e.id) ||
+      !isType(e.type) ||
+      !/^#[0-9a-f]{6}$/i.test(e.color) ||
+      !optColour(e.faceColor) ||
+      typeof e.name !== 'string'
+    )
       throw Error('Invalid element data.');
     if (!a.groups.some((g) => g.id === e.group) || typeof e.override !== 'boolean')
       throw Error('Invalid element group.');

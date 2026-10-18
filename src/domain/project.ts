@@ -40,7 +40,8 @@ export type ArtworkElement = {
   override: boolean; // true when type differs on purpose from the group's type
   pixels: number;
   bounds: [number, number, number, number]; // traced image pixels, y down
-  color: string;
+  color: string; // average colour of the artwork (traced / SVG fill)
+  faceColor?: string; // chosen face colour; overrides the group's
   regions: Region[];
 };
 
@@ -50,6 +51,8 @@ export type ArtworkGroup = {
   name: string;
   type: ConstructionType;
   params?: Record<string, number>;
+  faceColor?: string; // face / flat colour for the group; unset = artwork colours or board default
+  returnColor?: string; // painted return colour (lit letters); unset = natural metal
 };
 
 export type Artwork = {
@@ -101,6 +104,9 @@ export type ViewState = {
   exposure: number; // camera EV offset, -2..+2
   presentation: boolean;
   toolpaths: boolean; // overlay compensated cut paths in the 2D view
+  selection: string[]; // selected element ids (selected = the primary one)
+  selectedGroup: string | null; // set when a whole group is selected from the structure tree
+  hidden: string[]; // element ids hidden in the views (never affects the design)
 };
 
 // Cutting and bending settings (see src/fabrication).
@@ -191,6 +197,9 @@ export function defaultView(): ViewState {
     exposure: 0,
     presentation: false,
     toolpaths: false,
+    selection: [],
+    selectedGroup: null,
+    hidden: [],
   };
 }
 

@@ -2,9 +2,8 @@
 import { loadImage, traceImage } from '../artwork/import.ts';
 import { svgArtwork } from '../artwork/svg.ts';
 import type { Artwork } from '../domain/project.ts';
-import { constructionNames, type ConstructionType, type ViewMode } from '../domain/project.ts';
+import type { ViewMode } from '../domain/project.ts';
 import { AUTOSAVE, BACKUP, parseProject, readStore, serialise, writeStore } from '../storage/project.ts';
-import { applyGroupType } from '../artwork/grouping.js';
 import { computeLayout } from '../domain/layout.ts';
 import { recipes } from '../domain/recipes.ts';
 import { kelvinToHex } from '../domain/lighting.ts';
@@ -127,32 +126,6 @@ export function setMode(mode: ViewMode) {
     say(
       'Click a traced shape to review its construction. Use Exclude to remove background marks or unwanted details.',
     );
-}
-
-export type ApplyScope = 'group' | 'selected' | 'all';
-export function applyConstruction(type: ConstructionType, scope: ApplyScope) {
-  const { design, view } = getState();
-  const a = design.present.artwork,
-    sel = a?.elements.find((e) => e.id === view.selected);
-  if (!a || !sel) return;
-  const groups = a.groups.map((g) => ({ ...g })),
-    elements = a.elements.map((e) => ({ ...e }));
-  if (scope === 'selected') {
-    const e = elements.find((e) => e.id === sel.id)!;
-    e.type = type;
-    e.override = type !== groups.find((g) => g.id === e.group)?.type;
-  } else
-    for (const g of scope === 'all' ? groups : groups.filter((g) => g.id === sel.group)) {
-      elements.forEach((e) => e.group === g.id && (e.override = false));
-      applyGroupType(groups, elements, g.id, type);
-    }
-  const groupName = a.groups.find((g) => g.id === sel.group)?.name;
-  editDesign(
-    (d) => ({ ...d, artwork: { ...a, groups, elements } }),
-    scope === 'selected'
-      ? `${sel.name} set to ${constructionNames[type]} as an override.`
-      : `${scope === 'all' ? 'All groups' : groupName} set to ${constructionNames[type]}.`,
-  );
 }
 
 export function exportView(trace: HTMLCanvasElement | null) {
