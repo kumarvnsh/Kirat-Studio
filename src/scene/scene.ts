@@ -1061,6 +1061,7 @@ export class SignScene {
     const state = this.state!, size = this.renderer.getSize(new T.Vector2()), ratio = this.renderer.getPixelRatio();
     const position = this.camera.position.clone(), target = this.controls.target.clone();
     const aspect = this.camera.aspect, near = this.camera.near, far = this.camera.far, maxDistance = this.controls.maxDistance;
+    let captureFailed = false;
     try {
       this.highlight(false);
       this.renderer.setPixelRatio(1);
@@ -1078,6 +1079,9 @@ export class SignScene {
       this.setEnvironment({ ...state, environment });
       this.renderNow();
       return this.renderer.domElement.toDataURL('image/png');
+    } catch (error) {
+      captureFailed = true;
+      throw error;
     } finally {
       this.camera.near = near;
       this.camera.far = far;
@@ -1087,12 +1091,17 @@ export class SignScene {
       this.camera.lookAt(target);
       this.renderer.setPixelRatio(ratio);
       this.renderer.setSize(size.x, size.y, false);
-      this.setEnvironment(state);
-      this.highlight();
-      this.resize(true);
+      this.composer.setSize(size.x, size.y);
       this.camera.aspect = aspect;
       this.camera.updateProjectionMatrix();
-      this.renderNow();
+      this.setEnvironment(state);
+      this.highlight();
+      try {
+        this.renderNow();
+      } catch (error) {
+        // Preserve the capture error if rendering the restored preview also fails.
+        if (!captureFailed) throw error;
+      }
     }
   }
 

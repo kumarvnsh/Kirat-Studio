@@ -146,22 +146,23 @@ for (const aspect of [0.6, 1, 2.4]) {
   }
 }
 
-test('still capture restores camera and renderer after a render failure', () => {
+for (const persistentFailure of [false, true]) {
+test(`still capture restores camera and renderer when render failure persists: ${persistentFailure}`, () => {
   const viewer = Object.create(SignScene.prototype) as SignScene;
   const camera = new T.PerspectiveCamera(35, 1.7, .2, 99);
   camera.position.set(3, 2, 8);
   const target = new T.Vector3(0, -1, .3), position = camera.position.clone();
   const state = sceneInput({ settings: defaultSettings(), artwork: null }, { ...defaultView(), scenePreset: 'interior' });
+  const composerSize = new T.Vector2(700, 400);
   let size = new T.Vector2(700, 400), ratio = 2, renders = 0, environment = state;
   Object.assign(viewer, {
     camera, state, scenery: buildScenery('interior', 3.6, 1.2, -.13),
     controls: { target: target.clone(), maxDistance: 47, update() {} },
     renderer: { getSize: (out: T.Vector2) => out.copy(size), getPixelRatio: () => ratio,
       setPixelRatio: (value: number) => { ratio = value; }, setSize: (w: number, h: number) => { size.set(w, h); } },
-    composer: { setSize() {} }, highlight() {}, draw() {},
+    composer: { setSize(w: number, h: number) { composerSize.set(w, h); } }, highlight() {}, draw() {},
     setEnvironment: (value: typeof state) => { environment = value; },
-    resize() { camera.aspect = 123; },
-    renderNow() { if (++renders === 1) throw new Error('capture failed'); },
+    renderNow() { if (++renders === 1 || persistentFailure) throw new Error(renders === 1 ? 'capture failed' : 'preview failed'); },
   });
   try {
     assert.throws(() => viewer.renderStill(1400, 700, 'night'), /capture failed/);
@@ -172,9 +173,11 @@ test('still capture restores camera and renderer after a render failure', () => 
     assert.equal(camera.far, 99);
     assert.equal(viewer.controls.maxDistance, 47);
     assert.deepEqual(size.toArray(), [700, 400]);
+    assert.deepEqual(composerSize.toArray(), [700, 400]);
     assert.equal(ratio, 2);
     assert.equal(environment, state);
     assert.equal(viewer.state, state);
     assert.equal(renders, 2);
   } finally { disposeScenery(viewer.scenery!); }
 });
+}
