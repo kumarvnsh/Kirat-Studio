@@ -181,3 +181,52 @@ test(`still capture restores camera and renderer when render failure persists: $
   } finally { disposeScenery(viewer.scenery!); }
 });
 }
+
+test('contextual construction failure falls back once, caches the request, and recovers', (t) => {
+  const messages: string[] = [];
+  const viewer = Object.create(SignScene.prototype) as SignScene;
+  Object.assign(viewer, {
+    scene: new T.Scene(), scenery: null, sceneryKey: '', dirty: false,
+    onSceneError: (message: string) => messages.push(message), state: null,
+  });
+  const input = sceneInput({ settings: defaultSettings(), artwork: null }, defaultView());
+  const originalSetValues = T.MeshStandardMaterial.prototype.setValues;
+  let injected = false;
+  t.mock.method(T.MeshStandardMaterial.prototype, 'setValues', function (this: T.MeshStandardMaterial, parameters: T.MeshStandardMaterialParameters) {
+    if (!injected && parameters.color === '#213d49') {
+      injected = true;
+      throw new Error('Shopfront glazing unavailable');
+    }
+    return originalSetValues.call(this, parameters);
+  });
+  t.mock.method(console, 'error', () => {});
+  try {
+    viewer.setScene(input);
+    const previous = viewer.scenery!;
+    let disposed = 0;
+    previous.wall.geometry.addEventListener('dispose', () => disposed++);
+    viewer.setScene({ ...input, scenePreset: 'shopfront' });
+    const fallback = viewer.scenery!;
+    assert.equal(injected, true);
+    assert.equal(fallback.frameBounds.isEmpty(), true);
+    assert.equal(previous.group.parent, null);
+    assert.equal(disposed, 1);
+    assert.equal(viewer.scene.children.filter(child => child.name === 'installation-scenery').length, 1);
+    assert.deepEqual(messages, ['Scene unavailable. Showing the Studio setting.']);
+    const requestedKey = viewer.sceneryKey;
+    assert.ok(requestedKey.startsWith('shopfront:'));
+    viewer.setScene({ ...input, scenePreset: 'shopfront', exposure: 1 });
+    assert.equal(viewer.scenery, fallback);
+    assert.equal(viewer.sceneryKey, requestedKey);
+    assert.equal(messages.length, 1);
+    viewer.setScene({ ...input, scenePreset: 'interior' });
+    assert.notEqual(viewer.scenery, fallback);
+    assert.equal(viewer.scenery!.frameBounds.isEmpty(), false);
+    assert.equal(fallback.group.parent, null);
+    assert.equal(viewer.scene.children.filter(child => child.name === 'installation-scenery').length, 1);
+    assert.equal(messages.length, 1);
+  } finally {
+    if (viewer.scenery) disposeScenery(viewer.scenery);
+    t.mock.restoreAll();
+  }
+});
