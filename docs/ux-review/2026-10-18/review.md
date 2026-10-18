@@ -93,7 +93,7 @@ The approved Focused professional studio direction is implemented in the local R
 
 88 automated tests pass; TypeScript and production build pass. Existing Vite large-chunk warning remains. Browser checks covered untouched unit conversion (no history edit), rejected numeric drafts, Escape/commit/undo, SVG-specific controls, generated raster text and undo, review-dialog close into 2D, assembly step selection, selected counter strip and bend row, forming/back navigation, DXF and CSV downloads, day/night comparison, and phone property navigation. No console errors were captured. Layout widths were checked at 1440, 1280, 1024, 768 and 390 pixels, with no horizontal document overflow at the measured narrow widths. Spec and code quality reviews identified and verified fixes for mode transitions, exports, panel recovery and numeric data safety.
 
-The browser raster check used generated text; external raster file upload, browser zoom, exhaustive keyboard navigation, save-failure simulation and project-reopen smoke testing were not repeated in this pass. Existing import/storage tests cover their underlying parsing and compatibility. Lighting remains a concept preview; fabrication remains geometric, without machine calibration or nesting.
+The browser raster check used generated text; external raster file upload, browser zoom, exhaustive keyboard navigation and save-failure simulation were not repeated in this pass. Existing import/storage tests cover their underlying parsing and compatibility. Lighting remains a concept preview; fabrication remains geometric, without machine calibration or nesting.
 
 ### Implemented screenshots
 
@@ -106,3 +106,5 @@ The browser raster check used generated text; external raster file upload, brows
 - [SVG import](implemented/vector-import.jpg)
 - [Raster text import](implemented/raster-import.jpg)
 - [Construction references](implemented/construction-chooser.jpg)
+
+Local integration: fast-forwarded the original main checkout, re-ran all 88 tests and typecheck, then verified localhost:5173 renders the new studio and restores its existing browser autosave. [Original local URL screenshot](implemented/local-5173.jpg).
