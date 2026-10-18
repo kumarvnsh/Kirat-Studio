@@ -1,4 +1,6 @@
 import test from 'node:test';
+import * as T from 'three';
+import { buildScenery, disposeScenery } from '../src/scene/scenery.ts';
 import assert from 'node:assert/strict';
 import { defaultSettings, defaultView } from '../src/domain/project.ts';
 import { sceneInput } from '../src/domain/layout.ts';
@@ -34,3 +36,47 @@ for (const [width, height] of [[150, 150], [3600, 1200], [24000, 500], [600, 600
     assert.ok(dimensions.floorY + dimensions.counterHeight < -height / 2000);
   });
 }
+
+
+for (const preset of ['studio', 'shopfront', 'interior'] as const) {
+  test(`${preset} scenery owns its wall, lighting and framing without selectable parts`, () => {
+    const scenery = buildScenery(preset, 3.6, 1.2, -0.13);
+    assert.equal(scenery.group.name, 'installation-scenery');
+    assert.equal(scenery.group.children.filter(child => child.name === 'mounting-wall').length, 1);
+    assert.equal(scenery.wall.position.z, -0.13);
+    scenery.group.traverse(child => assert.equal(child.userData.part, undefined));
+    assert.equal(scenery.roomLight.intensity > 0, preset === 'interior');
+    assert.equal(scenery.frameBounds.isEmpty(), preset === 'studio');
+    if (preset !== 'studio') {
+      const dimensions = sceneryDimensions(3600, 1200);
+      assert.equal(scenery.frameBounds.min.y, dimensions.floorY);
+      assert.equal(scenery.frameBounds.max.y, dimensions.wallTop);
+      assert.equal(scenery.frameBounds.max.z, 1.2);
+      assert.ok(scenery.group.getObjectByName('floor'));
+    }
+    disposeScenery(scenery);
+    assert.equal(scenery.group.children.length, 0);
+  });
+}
+
+test('disposing interior scenery releases every owned resource exactly once and detaches it', () => {
+  const scenery = buildScenery('interior', 3.6, 1.2, -0.13);
+  const parent = new T.Group();
+  parent.add(scenery.group);
+  const disposalCounts: number[] = [];
+  const resources = new Set<T.BufferGeometry | T.Material>();
+  scenery.group.traverse(child => {
+    if (!(child instanceof T.Mesh)) return;
+    for (const resource of [child.geometry, ...[child.material].flat()]) {
+      assert.equal(resources.has(resource), false, 'meshes must own their resources');
+      resources.add(resource);
+      const index = disposalCounts.push(0) - 1;
+      resource.addEventListener('dispose', () => disposalCounts[index]++);
+    }
+  });
+  assert.ok(resources.size > 4);
+  disposeScenery(scenery);
+  assert.equal(scenery.group.parent, null);
+  assert.equal(scenery.group.children.length, 0);
+  assert.ok(disposalCounts.every(count => count === 1));
+});
