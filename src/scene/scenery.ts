@@ -101,3 +101,22 @@ export function buildScenery(preset: ScenePreset, width: number, height: number,
     throw error;
   }
 }
+
+// Fit the bounded installation area from any viewing direction, independent of the floor's extent.
+export function contextFrame(bounds: T.Box3, aspect: number, fov: number, direction: T.Vector3) {
+  const center = bounds.getCenter(new T.Vector3());
+  const dir = direction.clone().normalize();
+  if (dir.lengthSq() < .5) dir.set(.17, .115, 1).normalize();
+  const right = new T.Vector3().crossVectors(new T.Vector3(0, 1, 0), dir);
+  if (right.lengthSq() < 1e-6) right.set(1, 0, 0);
+  right.normalize();
+  const up = new T.Vector3().crossVectors(dir, right).normalize();
+  const tanV = Math.tan(fov * Math.PI / 360), tanH = tanV * aspect;
+  let distance = 0;
+  for (const x of [bounds.min.x, bounds.max.x]) for (const y of [bounds.min.y, bounds.max.y]) for (const z of [bounds.min.z, bounds.max.z]) {
+    const offset = new T.Vector3(x, y, z).sub(center);
+    distance = Math.max(distance, offset.dot(dir) + Math.max(Math.abs(offset.dot(right)) / tanH, Math.abs(offset.dot(up)) / tanV) * 1.12);
+  }
+  const radius = bounds.getSize(new T.Vector3()).length() / 2;
+  return { center, position: center.clone().addScaledVector(dir, distance), distance, near: .05, far: Math.max(35, distance + radius * 3) };
+}

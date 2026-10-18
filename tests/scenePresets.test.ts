@@ -1,7 +1,7 @@
 import test from 'node:test';
 import * as T from 'three';
 import { SignScene } from '../src/scene/scene.ts';
-import { buildScenery, disposeScenery } from '../src/scene/scenery.ts';
+import { buildScenery, disposeScenery, contextFrame } from '../src/scene/scenery.ts';
 import assert from 'node:assert/strict';
 import { defaultSettings, defaultView } from '../src/domain/project.ts';
 import { sceneInput } from '../src/domain/layout.ts';
@@ -125,4 +125,56 @@ test('scene scenery is cached independently of preview state and replaced for pr
   } finally {
     if (viewer.scenery) disposeScenery(viewer.scenery);
   }
+});
+
+for (const aspect of [0.6, 1, 2.4]) {
+  for (const direction of [new T.Vector3(.17, .115, 1), new T.Vector3(1, .08, .38)]) {
+    test(`context framing contains every corner at aspect ${aspect} and direction ${direction.toArray()}`, () => {
+      const bounds = new T.Box3(new T.Vector3(-4, -4, -.2), new T.Vector3(4, 1, 1.2));
+      const original = bounds.clone();
+      const frame = contextFrame(bounds, aspect, 35, direction);
+      const camera = new T.PerspectiveCamera(35, aspect, frame.near, frame.far);
+      camera.position.copy(frame.position);
+      camera.lookAt(frame.center);
+      camera.updateMatrixWorld(true);
+      for (const x of [bounds.min.x, bounds.max.x]) for (const y of [bounds.min.y, bounds.max.y]) for (const z of [bounds.min.z, bounds.max.z]) {
+        const projected = new T.Vector3(x, y, z).project(camera);
+        assert.ok(Math.abs(projected.x) <= 1 && Math.abs(projected.y) <= 1 && projected.z >= -1 && projected.z <= 1);
+      }
+      assert.ok(bounds.equals(original));
+    });
+  }
+}
+
+test('still capture restores camera and renderer after a render failure', () => {
+  const viewer = Object.create(SignScene.prototype) as SignScene;
+  const camera = new T.PerspectiveCamera(35, 1.7, .2, 99);
+  camera.position.set(3, 2, 8);
+  const target = new T.Vector3(0, -1, .3), position = camera.position.clone();
+  const state = sceneInput({ settings: defaultSettings(), artwork: null }, { ...defaultView(), scenePreset: 'interior' });
+  let size = new T.Vector2(700, 400), ratio = 2, renders = 0, environment = state;
+  Object.assign(viewer, {
+    camera, state, scenery: buildScenery('interior', 3.6, 1.2, -.13),
+    controls: { target: target.clone(), maxDistance: 47, update() {} },
+    renderer: { getSize: (out: T.Vector2) => out.copy(size), getPixelRatio: () => ratio,
+      setPixelRatio: (value: number) => { ratio = value; }, setSize: (w: number, h: number) => { size.set(w, h); } },
+    composer: { setSize() {} }, highlight() {}, draw() {},
+    setEnvironment: (value: typeof state) => { environment = value; },
+    resize() { camera.aspect = 123; },
+    renderNow() { if (++renders === 1) throw new Error('capture failed'); },
+  });
+  try {
+    assert.throws(() => viewer.renderStill(1400, 700, 'night'), /capture failed/);
+    assert.ok(camera.position.equals(position));
+    assert.ok(viewer.controls.target.equals(target));
+    assert.equal(camera.aspect, 1.7);
+    assert.equal(camera.near, .2);
+    assert.equal(camera.far, 99);
+    assert.equal(viewer.controls.maxDistance, 47);
+    assert.deepEqual(size.toArray(), [700, 400]);
+    assert.equal(ratio, 2);
+    assert.equal(environment, state);
+    assert.equal(viewer.state, state);
+    assert.equal(renders, 2);
+  } finally { disposeScenery(viewer.scenery!); }
 });

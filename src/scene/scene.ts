@@ -20,7 +20,7 @@ import { LAYERS, type LayerId, type Point, type Region } from '../domain/project
 import { LED_SIZE, type ElementLayout, type LetterPart, type SceneInput } from '../domain/layout.ts';
 import { frontLit, haloLit, recipes } from '../domain/recipes.ts';
 import { PSU_SIZE } from '../domain/layout.ts';
-import { buildScenery, disposeScenery, type Scenery } from './scenery.ts';
+import { buildScenery, disposeScenery, contextFrame, type Scenery } from './scenery.ts';
 import { normalizeScenePreset } from '../domain/scenePresets.ts';
 
 const M = 0.001;
@@ -949,9 +949,34 @@ export class SignScene {
     this.draw();
   }
 
+  private frameContext(direction: T.Vector3): boolean {
+    const bounds = this.scenery?.frameBounds;
+    if (!this.scenery?.group.visible || !bounds || bounds.isEmpty() || this.state?.isolate) return false;
+    const frame = contextFrame(bounds, this.camera.aspect, this.camera.fov, direction);
+    this.camera.position.copy(frame.position);
+    this.controls.target.copy(frame.center);
+    this.camera.near = frame.near;
+    this.camera.far = frame.far;
+    this.controls.maxDistance = Math.max(30, frame.distance * 2);
+    this.camera.updateProjectionMatrix();
+    this.camera.lookAt(frame.center);
+    this.controls.update();
+    this.draw();
+    return true;
+  }
+
   fit(kind: 'perspective' | 'front' | 'rear' | 'side' | 'top' = 'perspective') {
     const s = this.state;
     if (!s) return;
+    const direction = kind === 'front' ? new T.Vector3(0, 0, 1)
+      : kind === 'rear' ? new T.Vector3(-.12, .12, -1)
+      : kind === 'side' ? new T.Vector3(.92, .08, .38)
+      : kind === 'top' ? new T.Vector3(0, .9, .42) : new T.Vector3(.17, .115, 1);
+    if (s.mode === '3d' && this.frameContext(direction)) return;
+    this.controls.maxDistance = 30;
+    this.camera.near = .05;
+    this.camera.far = 35;
+    this.camera.updateProjectionMatrix();
     const n = LAYERS.length - 1;
     let center = new T.Vector3(0, 0, 0.035 + (s.explode / 100) * EXPLODE_STEP * n * 0.5),
       w = s.settings.width * M,
@@ -1035,6 +1060,7 @@ export class SignScene {
   renderStill(width: number, height: number, environment: SceneInput['environment']): string {
     const state = this.state!, size = this.renderer.getSize(new T.Vector2()), ratio = this.renderer.getPixelRatio();
     const position = this.camera.position.clone(), target = this.controls.target.clone();
+    const aspect = this.camera.aspect, near = this.camera.near, far = this.camera.far, maxDistance = this.controls.maxDistance;
     try {
       this.highlight(false);
       this.renderer.setPixelRatio(1);
@@ -1043,14 +1069,19 @@ export class SignScene {
       this.camera.aspect = width / height;
       this.camera.updateProjectionMatrix();
       const direction = position.clone().sub(target).normalize();
-      const need = Math.max((state.settings.width * M) / this.camera.aspect, state.settings.height * M);
-      const distance = need / (2 * Math.tan((this.camera.fov * Math.PI) / 360)) * 1.12 + .1;
-      this.camera.position.copy(target).addScaledVector(direction, distance);
-      this.camera.lookAt(target);
+      if (!this.frameContext(direction)) {
+        const need = Math.max((state.settings.width * M) / this.camera.aspect, state.settings.height * M);
+        const distance = need / (2 * Math.tan((this.camera.fov * Math.PI) / 360)) * 1.12 + .1;
+        this.camera.position.copy(target).addScaledVector(direction, distance);
+        this.camera.lookAt(target);
+      }
       this.setEnvironment({ ...state, environment });
       this.renderNow();
       return this.renderer.domElement.toDataURL('image/png');
     } finally {
+      this.camera.near = near;
+      this.camera.far = far;
+      this.controls.maxDistance = maxDistance;
       this.camera.position.copy(position);
       this.controls.target.copy(target);
       this.camera.lookAt(target);
@@ -1059,6 +1090,9 @@ export class SignScene {
       this.setEnvironment(state);
       this.highlight();
       this.resize(true);
+      this.camera.aspect = aspect;
+      this.camera.updateProjectionMatrix();
+      this.renderNow();
     }
   }
 
