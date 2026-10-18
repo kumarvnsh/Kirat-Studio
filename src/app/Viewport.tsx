@@ -5,6 +5,7 @@ import { inside } from '../artwork/contours.js';
 import { loadImage } from '../artwork/import.ts';
 import { constructionNames } from '../domain/project.ts';
 import { environments, type Environment } from '../domain/lighting.ts';
+import { scenePresets, normalizeScenePreset } from '../domain/scenePresets.ts';
 import { computeLayout, sceneInput } from '../domain/layout.ts';
 import { formatAllUnits, formatDimsAllUnits, formatDimsInUnit } from '../domain/units.ts';
 import { fabricationPlan } from '../fabrication/plan.ts';
@@ -175,6 +176,9 @@ export function Viewport({
         </div>
         <div className="lightingbuttons">
           {!overlay && <>
+          {view.mode === '3d' && <select aria-label="Scene" value={normalizeScenePreset(view.scenePreset)} onChange={event => setView({ scenePreset: normalizeScenePreset(event.target.value) })}>
+            {Object.entries(scenePresets).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          </select>}
           <select aria-label="Time of day" value={view.environment} onChange={e => setView({ environment: e.target.value as Environment })}>
             {(Object.keys(environments) as Environment[]).map(env => <option key={env} value={env}>{environments[env].label}</option>)}
           </select>
