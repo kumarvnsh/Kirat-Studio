@@ -7,10 +7,10 @@ import {
   type DesignSettings,
   type NumericKey,
 } from '../domain/project.ts';
-import { textArtworkURL, uploadURL } from '../artwork/import.ts';
+import { readUpload, textArtworkURL } from '../artwork/import.ts';
 import { boardStack, computeLayout, MODULE_W, PSU_LOADING, PSU_W } from '../domain/layout.ts';
 import { bom } from '../domain/bom.ts';
-import { hasBackup, importImage, restoreBackup, retrace, setMode } from './actions.ts';
+import { hasBackup, importImage, importSvg, restoreBackup, retrace, setMode } from './actions.ts';
 import { editDesign, say, setTrace, setView, showAll, useApp, useDesign, useView } from './store.ts';
 
 export function ToolsPanel() {
@@ -74,19 +74,22 @@ function ArtworkPanel() {
       <label className="uploadzone">
         <span>＋</span>
         <b>Upload logo</b>
-        <small>PNG, JPG, WebP or SVG · up to 8 MB</small>
+        <small>SVG (exact vectors), PNG, JPG or WebP · up to 8 MB</small>
         <input
           type="file"
-          accept="image/png,image/jpeg,image/webp,image/svg+xml"
+          accept="image/svg+xml,.svg,image/png,image/jpeg,image/webp"
           hidden
           onChange={async (e) => {
             const file = e.target.files?.[0];
             e.target.value = '';
             if (!file) return;
             try {
-              const url = await uploadURL(file);
-              await importImage(url);
-              URL.revokeObjectURL(url);
+              const up = await readUpload(file);
+              if ('svg' in up) importSvg(up.svg);
+              else {
+                await importImage(up.url);
+                URL.revokeObjectURL(up.url);
+              }
             } catch (err) {
               say((err as Error).message);
             }
@@ -162,8 +165,18 @@ function ArtworkPanel() {
         I reviewed the traced shapes
       </label>
       <div className="callout">
-        Raster and SVG uploads use a raster-to-contour draft in this version. Review small details and holes.
-        No OCR, production toolpaths or automatic fabrication approval. Retracing is undoable.
+        {artwork?.origin === 'vector' ? (
+          <>
+            <b>Vector artwork.</b> Outlines come straight from the SVG: exact curves, holes and the file's
+            groups. Trace settings don't apply.
+          </>
+        ) : (
+          <>
+            <b>Traced artwork.</b> PNG/JPG/WebP are reconstructed from pixels and can't guarantee the original
+            curves or font; upload an SVG when you have one. Review small details and holes.
+          </>
+        )}{' '}
+        No production toolpaths or automatic fabrication approval. Re-importing is undoable.
       </div>
     </section>
   );

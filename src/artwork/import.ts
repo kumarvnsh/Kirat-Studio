@@ -76,22 +76,25 @@ export function traceImage(
       imageHeight: h,
       imageData: c.toDataURL('image/png'),
       approved: false,
+      origin: 'trace',
     },
   };
 }
 
-// Uploaded file → object URL. SVGs must be self-contained (no scripts or external resources).
-export async function uploadURL(file: File): Promise<string> {
+// Uploaded file → SVG text (imported as vectors) or an object URL for raster tracing.
+// SVGs must be self-contained: no scripts or external resources.
+export async function readUpload(file: File): Promise<{ svg: string } | { url: string }> {
   if (file.size > 8 * 1024 * 1024) throw Error('Choose artwork smaller than 8 MB.');
-  if (!['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'].includes(file.type))
-    throw Error('Use PNG, JPG, WebP or SVG.');
-  if (file.type !== 'image/svg+xml') return URL.createObjectURL(file);
+  const isSvg = file.type === 'image/svg+xml' || /\.svg$/i.test(file.name);
+  if (!isSvg && !['image/png', 'image/jpeg', 'image/webp'].includes(file.type))
+    throw Error('Use SVG, PNG, JPG or WebP.');
+  if (!isSvg) return { url: URL.createObjectURL(file) };
   const text = await file.text();
   if (/<script|foreignObject|<!ENTITY|(?:href|src)\s*=\s*["']\s*(?:https?:|\/\/)|url\s*\(/i.test(text))
     throw Error(
-      'SVG must be self-contained without scripts, external resources or CSS URLs. Export a plain SVG or PNG.',
+      'SVG must be self-contained without scripts, external resources or CSS URLs. Export a plain SVG.',
     );
-  return URL.createObjectURL(new Blob([text], { type: 'image/svg+xml' }));
+  return { svg: text };
 }
 
 export function textArtworkURL(text: string): string {

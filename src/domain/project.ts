@@ -58,6 +58,7 @@ export type Artwork = {
   imageHeight: number;
   imageData: string; // PNG data URL of the cleaned artwork, used for face colours
   approved: boolean;
+  origin?: 'vector' | 'trace'; // vector = exact SVG outlines, trace = reconstructed from pixels
 };
 
 // Numeric design settings. The table is the single source for UI inputs, defaults and validation.

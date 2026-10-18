@@ -1,5 +1,7 @@
 // Operations that span panels: importing artwork, opening/saving projects, mode changes, export.
 import { loadImage, sampleCrop, traceImage } from '../artwork/import.ts';
+import { svgArtwork } from '../artwork/svg.ts';
+import type { Artwork } from '../domain/project.ts';
 import { constructionNames, type ConstructionType, type ViewMode } from '../domain/project.ts';
 import { AUTOSAVE, BACKUP, parseProject, readStore, serialise, writeStore } from '../storage/project.ts';
 import { applyGroupType } from '../artwork/grouping.js';
@@ -8,14 +10,15 @@ import type { SignScene } from '../scene/scene.ts';
 
 // The renderer, set by <Viewport>. Null when WebGL is unavailable.
 export const viewer: { current: SignScene | null } = { current: null };
-let source: HTMLImageElement | null = null; // image the current artwork was traced from
+// What the current artwork came from, so Trace & rebuild can redo it.
+let source: { image: HTMLImageElement } | { svg: string } | null = null;
 
 const fullCrop = { x: 0, y: 0, w: 100, h: 100 };
 const reportError = (e: unknown) => say(e instanceof Error ? e.message : String(e));
 
 export async function importImage(url: string, sample = false) {
   try {
-    source = await loadImage(url);
+    source = { image: await loadImage(url) };
     setTrace({ crop: sample ? sampleCrop : fullCrop, background: 'white', threshold: 45 });
     retrace();
   } catch (e) {
@@ -23,16 +26,42 @@ export async function importImage(url: string, sample = false) {
   }
 }
 
-// Retracing replaces the artwork as one undoable design edit.
+export function importSvg(text: string) {
+  source = { svg: text };
+  retrace();
+}
+
+// Re-importing replaces the artwork as one undoable design edit.
 export function retrace() {
-  if (!source) return say('Upload artwork or load the Kirat sample first.');
+  if (!source) {
+    const vector = getState().design.present.artwork?.origin === 'vector';
+    return say(
+      vector
+        ? 'Vector artwork has nothing to retrace. Upload the SVG again to re-import it.'
+        : 'Upload artwork or load the Kirat sample first.',
+    );
+  }
   try {
-    const { artwork, truncated } = traceImage(source, getState().trace);
+    let artwork: Artwork, note: string;
+    if ('svg' in source) {
+      const r = svgArtwork(source.svg);
+      artwork = r.artwork;
+      note =
+        `Vector artwork: exact outlines from the SVG${r.total > artwork.elements.length ? ` (${r.total} shapes, smallest merged or capped at 100)` : ''}. ` +
+        (artwork.groups.some((g) => !/^Group \d+$/.test(g.name))
+          ? 'Groups come from the file. '
+          : 'The file has no groups, so elements are grouped by row and spacing. ');
+    } else {
+      const r = traceImage(source.image, getState().trace);
+      artwork = r.artwork;
+      note =
+        (r.truncated ? 'Smallest shapes capped at 100. ' : '') +
+        'Traced from pixels: review outlines. Elements are grouped by row and spacing; groups much smaller than the main lettering default to vinyl. ';
+    }
     const holes = artwork.elements.reduce((n, e) => n + e.regions.reduce((m, r) => m + r.holes.length, 0), 0);
     editDesign(
       (d) => ({ ...d, artwork }),
-      `${artwork.elements.length} shapes · ${holes} holes · ${artwork.groups.length} groups${truncated ? ' · smallest shapes capped at 100' : ''}. ` +
-        'Elements are grouped by row and spacing; groups much smaller than the main lettering default to vinyl. Review groups in the inspector.',
+      `${artwork.elements.length} shapes · ${holes} holes · ${artwork.groups.length} groups. ${note}Review groups in the inspector.`,
     );
     setView({
       selected: artwork.elements[0].id,
@@ -47,7 +76,8 @@ export function retrace() {
 
 export async function openProject(text: string, note = 'Project opened.') {
   const p = parseProject(text);
-  if (p.design.artwork) source = await loadImage(p.design.artwork.imageData);
+  const a = p.design.artwork;
+  source = a && a.origin !== 'vector' ? { image: await loadImage(a.imageData) } : null;
   setTrace({ ...(p.traceSettings ?? {}), crop: fullCrop });
   loadDesign(p.design, note);
 }

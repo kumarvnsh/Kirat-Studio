@@ -24,7 +24,7 @@ Requires Node 20+.
 | `src/domain/layout.ts` | Design → dimensioned parts: board stack, frame members, per-letter stacks, LED and standoff positions; `sceneInput()` |
 | `src/domain/bom.ts` | Preliminary bill of materials from the layout |
 | `src/app/` | React UI (`App`, `ToolsPanel`, `Viewport`, `Inspector`), store (`store.ts`), cross-panel actions (`actions.ts`), styles |
-| `src/artwork/` | Contour tracing (`contours.js`), dot attachment and grouping (`grouping.js`), raster import pipeline (`import.ts`) |
+| `src/artwork/` | SVG vector import (`svg.ts`), raster tracing (`contours.js`, `import.ts`), dot attachment and grouping (`grouping.js`) |
 | `src/editor/history.ts` | Immutable undo/redo over designs |
 | `src/storage/project.ts` | Project file format v4, v1–v3 migration, validation, browser autosave |
 | `src/scene/scene.ts` | Three.js display of the layout; converts mm → m, owns lighting and interaction only |
@@ -52,6 +52,8 @@ Milestones A and B done (Kirat group naming waits for `public/kirat-reference.pn
 - Letter mounting: fixing studs through the fascia for every non-vinyl letter, plus spacers when a recipe has a standoff.
 - Placeholder power plan: load from the LED grid, PSUs sized at ≤ 80% loading and parked in the bottom-right frame bay, one cable run and penetration per lit element, fit warnings (PSU deeper than the frame, bay full, LED cap).
 - Per-element stack readout, board stack table, power summary and preliminary BOM; 10 assembly layers.
+
+Artwork import: **SVG is imported as vectors** (three's `SVGLoader`): exact curves flattened to 0.1 unit tolerance on a 1400-unit canvas, holes, transforms and `<use>` references preserved; top-level `<g>` groups (Inkscape label, `data-name` or id) become artwork groups; stroke-only paths are ignored. PNG/JPG/WebP are still traced from pixels.
 
 Known limits, deliberately left for later milestones: module/PSU ratings are placeholders until the verified atlas (F); no ACP seam or fixing pattern, cable holes in frame members, or wiring diagram (E); the face-retention method beyond trim cap (e.g. screws, inset) is not modelled.
 

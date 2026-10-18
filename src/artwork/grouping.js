@@ -69,13 +69,18 @@ export function autoGroup(components) {
     }
     clusters.push(cur);
   }
-  // Compare against text-like groups only, so a tall single-shape symbol doesn't make the wordmark "small".
+  return groupClusters(components, clusters);
+}
+
+// Build groups from clusters of components (each component in exactly one cluster).
+// Compare against text-like groups only, so a tall single-shape symbol doesn't make the wordmark "small".
+export function groupClusters(components, clusters, names = []) {
   const heights = clusters.map((cl) => median(cl.map(height))),
     text = heights.filter((_, i) => clusters[i].length > 1),
     tallest = Math.max(...(text.length ? text : heights));
   const groups = clusters.map((cl, i) => ({
     id: 'g' + (i + 1),
-    name: 'Group ' + (i + 1),
+    name: names[i] || 'Group ' + (i + 1),
     type: heights[i] < tallest * 0.5 ? 'vinyl' : 'front',
   }));
   const groupOf = new Map();

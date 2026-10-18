@@ -127,6 +127,8 @@ function validateArtwork(a: Artwork) {
     a.imageData.length > 12e6
   )
     throw Error('Invalid face artwork.');
+  if (a.origin !== undefined && a.origin !== 'vector' && a.origin !== 'trace')
+    throw Error('Invalid artwork origin.');
   if (!Array.isArray(a.groups) || a.groups.length > 100) throw Error('Invalid artwork groups.');
   for (const g of a.groups)
     if (
