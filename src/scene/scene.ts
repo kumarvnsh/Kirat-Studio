@@ -194,7 +194,7 @@ export class SignScene {
   constructor(host: HTMLElement, onSelect: (id: string | null, add: boolean, doubleClick?: boolean) => void) {
     this.host = host;
     this.onSelect = onSelect;
-    // Antialiasing comes from the composer's multisampling; tone mapping from the effect chain.
+    // Tone mapping comes from the effect chain; renderer antialiasing stays disabled.
     this.renderer = new T.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
     this.renderer.shadowMap.enabled = true;
@@ -223,7 +223,7 @@ export class SignScene {
     env.dispose();
     pmrem.dispose();
     // HDR pipeline. Bloom only picks up radiance above BLOOM_THRESHOLD, i.e. emissive parts.
-    this.composer = new EffectComposer(this.renderer, { frameBufferType: T.HalfFloatType, multisampling: 4 });
+    this.composer = new EffectComposer(this.renderer, { frameBufferType: T.HalfFloatType, multisampling: 0 });
     this.composer.addPass(new RenderPass(this.scene, this.camera));
     this.bloom = new BloomEffect({
       luminanceThreshold: BLOOM_THRESHOLD,
