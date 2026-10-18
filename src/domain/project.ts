@@ -4,6 +4,7 @@
 //   FabricationState — how the workshop makes it. Saved separately from the design.
 // Dimensions are millimetres. Conversion to metres happens only in src/scene.
 
+import type { ScenePreset } from './scenePresets.ts';
 import type { Environment } from './lighting.ts';
 import type { LengthUnit } from './units.ts';
 
@@ -120,6 +121,7 @@ export type ViewState = {
   bend: number; // forming progress 0..100
   bendStrip?: number; // view-only index in outer-then-counter strip order
   environment: Environment; // time of day
+  scenePreset?: ScenePreset;
   lights: boolean; // sign power
   dimming: number; // 0.1..1 of full LED output
   exposure: number; // camera EV offset, -2..+2
@@ -214,6 +216,7 @@ export function defaultView(): ViewState {
     explode: 0,
     bend: 100,
     environment: 'day',
+    scenePreset: 'studio',
     lights: false,
     dimming: 1,
     exposure: 0,
