@@ -56,7 +56,7 @@ export function Viewport({
         if (!id) clearSelection();
         else if (add) toggleSelect(id);
         else select(id);
-      });
+      }, message => say(message));
     } catch (e) {
       console.error(e);
       setNo3d(true);
@@ -91,6 +91,15 @@ export function Viewport({
     if (!ready && artwork) return;
     v.build(sceneInput(design, getState().view), ready ? art!.canvas : null);
   }, [design, ready, art, artwork, view.mode, bendTarget]);
+
+  // Scene settings reuse the sign geometry and update their own lighting.
+  useEffect(() => {
+    const v = viewer.current;
+    if (!v?.state || (!ready && artwork)) return;
+    const input = sceneInput(design, getState().view);
+    v.setScene(input);
+    v.setEnvironment(input);
+  }, [ready, design, view.scenePreset, view.mode]);
 
   // Fast environment & camera exposure update (no geometry rebuild).
   useEffect(() => {
@@ -137,7 +146,7 @@ export function Viewport({
       viewer.current?.fit();
     }, 60);
     return () => clearTimeout(t);
-  }, [ready, art, view.mode, view.isolate, view.presentation]);
+  }, [ready, art, view.mode, view.scenePreset, view.isolate, view.presentation]);
 
   const [traceZoom, setTraceZoom] = useState(1);
   const scope = selectionScope(artwork, view);

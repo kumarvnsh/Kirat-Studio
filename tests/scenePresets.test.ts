@@ -1,5 +1,6 @@
 import test from 'node:test';
 import * as T from 'three';
+import { SignScene } from '../src/scene/scene.ts';
 import { buildScenery, disposeScenery } from '../src/scene/scenery.ts';
 import assert from 'node:assert/strict';
 import { defaultSettings, defaultView } from '../src/domain/project.ts';
@@ -90,4 +91,38 @@ test('disposing scenery releases light shadow render targets', () => {
   scenery.roomLight.shadow.map = target;
   disposeScenery(scenery);
   assert.equal(disposed, 1);
+});
+
+test('scene scenery is cached independently of preview state and replaced for preset or dimensions', () => {
+  const viewer = Object.create(SignScene.prototype) as SignScene;
+  Object.assign(viewer, {
+    scene: new T.Scene(), scenery: null, sceneryKey: '', dirty: false,
+    onSceneError: () => {}, state: null,
+  });
+  const input = sceneInput({ settings: defaultSettings(), artwork: null }, { ...defaultView(), scenePreset: 'shopfront' });
+  try {
+    viewer.setScene(input);
+    const first = viewer.scenery!;
+    assert.equal(viewer.wall, first.wall);
+    assert.equal(viewer.dirty, true);
+    viewer.setScene({ ...input, exposure: 1, selected: 'example' });
+    assert.equal(viewer.scenery, first);
+    viewer.setScene({ ...input, scenePreset: 'interior' });
+    const interior = viewer.scenery!;
+    assert.notEqual(interior, first);
+    assert.equal(first.group.parent, null);
+    assert.equal(viewer.scene.children.filter(child => child.name === 'installation-scenery').length, 1);
+    viewer.setScene({ ...input, scenePreset: 'interior', mode: 'bend' });
+    assert.equal(viewer.scenery, interior);
+    assert.equal(interior.group.visible, false);
+    viewer.setScene({ ...input, scenePreset: 'interior', mode: '3d' });
+    assert.equal(viewer.scenery, interior);
+    assert.equal(interior.group.visible, true);
+    viewer.setScene({ ...input, scenePreset: 'interior', settings: { ...input.settings, width: input.settings.width + 100 } });
+    assert.notEqual(viewer.scenery, interior);
+    assert.equal(interior.group.parent, null);
+    assert.equal(viewer.scene.children.length, 1);
+  } finally {
+    if (viewer.scenery) disposeScenery(viewer.scenery);
+  }
 });
