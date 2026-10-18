@@ -1,4 +1,5 @@
-import { useId } from 'react';
+import { Dialog } from './Dialog.tsx';
+import { useId, useState } from 'react';
 import { ConstructionReference } from './ConstructionReference.tsx';
 import { boardStack } from '../domain/layout.ts';
 import type { ConstructionType, DesignSettings } from '../domain/project.ts';
@@ -307,7 +308,23 @@ function Letter3DReferenceThumb({ type }: { type: ConstructionType }) {
   );
 }
 
-export function ConstructionPicker({
+export function ConstructionPicker({ value, inheritLabel, onChange }: {
+  value: ConstructionType | 'inherit' | ''; inheritLabel?: string;
+  onChange: (next: ConstructionType | 'inherit') => void;
+}) {
+  const [open,setOpen]=useState(false);
+  const selected=CONSTRUCTION_META.find(item=>item.type===value);
+  return <div className="construction-choice"><button className="current-construction" onClick={()=>setOpen(true)} aria-haspopup="dialog">
+    <span><b>{selected?.title ?? (value==='inherit'?'Same as group':'Mixed constructions')}</b><small>{selected?.badge ?? inheritLabel ?? 'Choose a construction'}</small></span><span className="change-label">Change ⌄</span></button>
+    {selected&&<p className="construction-explanation">{selected.subtitle}</p>}
+    {open&&<Dialog title="Choose a construction" wide onClose={()=>setOpen(false)}><p className="muted">Compare how the face, sides and rear light behave. Changing construction resets its recipe parameters; letter overrides remain unless explicitly changed.</p>
+      <ConstructionOptions value={value} inheritLabel={inheritLabel} onChange={next=>{onChange(next);setOpen(false);}} />
+      <p className="muted reference-note">AI-generated appearance references. Project dimensions and material layers are shown in the live anatomy diagram.</p>
+    </Dialog>}
+  </div>;
+}
+
+function ConstructionOptions({
   value,
   inheritLabel,
   onChange,
@@ -330,7 +347,7 @@ export function ConstructionPicker({
               onClick={() => onChange(m.type)}
               title={`${recipes[m.type].name}: ${m.howItWorks}`}
             >
-              <ConstructionReference type={m.type} fallback={<Letter3DReferenceThumb type={m.type} />} />
+              <ConstructionReference className="construction-reference" type={m.type} fallback={<Letter3DReferenceThumb type={m.type} />} />
               <div className="c-card-body">
                 <div className="c-card-top">
                   <b>{m.title}</b>

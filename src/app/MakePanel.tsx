@@ -9,6 +9,23 @@ const saveText = (text: string, name: string, type: string) => {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 };
 
+export async function exportCutFiles() {
+  try {
+    const state = getState();
+    if (!state.design.present.artwork) return say('Import artwork before exporting cut files.');
+    const { planToDXF } = await import('../fabrication/dxf.ts');
+    const plan = fabricationPlan(state.design.present, state.fabrication);
+    saveText(planToDXF(plan, state.design.present.settings), 'kirat-cut-files.dxf', 'application/dxf');
+    say('DXF exported in mm. Parts are not nested; machine calibration is not modelled.');
+  } catch (error) { say('DXF export failed: ' + (error as Error).message); }
+}
+export function exportBendSchedule() {
+  const state = getState();
+  if (!state.design.present.artwork) return say('Import artwork before exporting a bend schedule.');
+  saveText(bendScheduleCSV(fabricationPlan(state.design.present, state.fabrication)), 'kirat-bend-schedule.csv', 'text/csv');
+  say('CSV exported. Geometric schedule; no machine calibration.');
+}
+
 export function MakePanel() {
   const design = useDesign(),
     view = useView(),

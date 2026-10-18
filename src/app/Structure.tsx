@@ -98,7 +98,9 @@ export function StructureTree() {
     a = design.artwork,
     view = useView(),
     unit = view.unit ?? 'mm';
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [search, setSearch] = useState('');
+  useEffect(() => setExpanded(new Set()), [a?.imageData]);
   const [renaming, setRenaming] = useState<Rename>(null);
   const [menu, setMenu] = useState<string | null>(null);
   const [dropOn, setDropOn] = useState<string | null>(null);
@@ -147,13 +149,13 @@ export function StructureTree() {
         onKeyDown={renameKeys}
       />
     ) : (
-      <span
+      <button type="button"
         className="name"
         title="Double-click to rename"
         onDoubleClick={(e) => (e.stopPropagation(), setRenaming({ kind, id }))}
       >
         {name}
-      </span>
+      </button>
     );
 
   // Drag letters onto a group to move them; drag a group onto another to reorder.
@@ -197,28 +199,23 @@ export function StructureTree() {
 
   return (
     <div className="tree" onDragEnd={() => setDropOn(null)}>
+      <label className="layer-search"><span className="sr-only">Search layers</span><input placeholder="Find a layer…" value={search} onChange={e => setSearch(e.target.value)} /></label>
       <div className="tree-tools">
         <button onClick={newGroup} title="New group (from the selected letters, if any)">
           + Group{sel.size && !view.selectedGroup ? ' from selection' : ''}
         </button>
         <button
-          onClick={() => setCollapsed(collapsed.size ? new Set() : new Set(a.groups.map((g) => g.id)))}
+          onClick={() => setExpanded(expanded.size ? new Set() : new Set(a.groups.map((g) => g.id)))}
           title="Expand / collapse all"
         >
-          {collapsed.size ? 'Expand' : 'Collapse'}
+          {expanded.size ? 'Collapse' : 'Expand'}
         </button>
         {view.hidden.length > 0 && (
           <button onClick={() => toggleHidden(view.hidden)} title="Show every hidden element">
             Show all
           </button>
         )}
-        <button
-          className="accent"
-          title="Commit pending edits and refresh 3D assembly"
-          onClick={() => applySceneChanges()}
-        >
-          ✓ Apply
-        </button>
+
       </div>
       <div
         className={'tree-row board' + (boardSelected ? ' active' : '')}
@@ -226,16 +223,20 @@ export function StructureTree() {
         onClick={() => selectBoard()}
       >
         <i className="swatch" style={{ background: design.settings.boardcolor }} />
-        <span className="name">Board structure</span>
+        <button className="name" onClick={() => selectBoard()}>Board</button>
         <small className="badge" title={formatDimsAllUnits(design.settings.width, design.settings.height)}>
           {formatDimsInUnit(design.settings.width, design.settings.height, unit)}
         </small>
       </div>
       {a.groups.map((g, gi) => {
-        const els = members(g.id),
+        const query = search.trim().toLowerCase();
+        const groupMatches = g.name.toLowerCase().includes(query) || g.id.toLowerCase().includes(query);
+        const found = members(g.id).filter(e => (e.name + ' ' + e.id).toLowerCase().includes(query));
+        if (query && !groupMatches && !found.length) return null;
+        const els = query && !groupMatches ? found : members(g.id),
           ids = els.map((e) => e.id),
           allHidden = ids.length > 0 && ids.every((id) => hidden.has(id)),
-          open = !collapsed.has(g.id);
+          open = !!query || expanded.has(g.id);
         return (
           <div key={g.id}>
             <div
@@ -253,13 +254,14 @@ export function StructureTree() {
             >
               <button
                 className="caret"
-                aria-label={open ? 'Collapse' : 'Expand'}
+                aria-label={(open ? 'Collapse ' : 'Expand ') + g.name}
+                aria-expanded={open}
                 onClick={(ev) => {
                   ev.stopPropagation();
-                  const next = new Set(collapsed);
-                  if (open) next.add(g.id);
-                  else next.delete(g.id);
-                  setCollapsed(next);
+                  const next = new Set(expanded);
+                  if (open) next.delete(g.id);
+                  else next.add(g.id);
+                  setExpanded(next);
                 }}
               >
                 {open ? '▾' : '▸'}
@@ -303,7 +305,7 @@ export function StructureTree() {
                   onDragStart={(ev) => dragElements(ev, e.id)}
                   onClick={(ev) => clickElement(ev, e.id)}
                 >
-                  <Swatch colors={[elementFaceColour(e, g, design.settings)]} />
+                  <ShapeThumbnail e={e} />
                   {nameField('element', e.id, e.name)}
                   {(e.override || e.faceColor) && (
                     <small className="badge ovr" title="Differs from its group">
@@ -323,12 +325,19 @@ export function StructureTree() {
           </div>
         );
       })}
+      {search && !a.groups.some(g => (g.name+' '+g.id).toLowerCase().includes(search.trim().toLowerCase()) || members(g.id).some(e => (e.name+' '+e.id).toLowerCase().includes(search.trim().toLowerCase()))) && <p className="empty-state">No matching layers.</p>}
       <p className="tree-hint">
         Click to select · Ctrl/Cmd-click to add · Shift-click for a range · double-click to rename · drag
         letters onto a group
       </p>
     </div>
   );
+}
+
+function ShapeThumbnail({ e }: { e: ArtworkElement }) {
+  const [x0,y0,x1,y1]=e.bounds;
+  const path=e.regions.map(r=>[r.outer,...r.holes].map(loop=>loop.map((p,i)=>(i?'L':'M')+p.join(',')).join(' ')+' Z').join(' ')).join(' ');
+  return <svg className="shape-thumbnail" viewBox={[x0,y0,Math.max(1,x1-x0),Math.max(1,y1-y0)].join(' ')} aria-hidden="true"><path d={path} fill={e.faceColor??e.color} fillRule="evenodd" /></svg>;
 }
 
 function GroupMenu({

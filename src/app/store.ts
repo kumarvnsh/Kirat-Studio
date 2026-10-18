@@ -18,6 +18,7 @@ export type AppState = {
   fabrication: FabricationState;
   trace: TraceOptions; // import settings for the next retrace (saved with the project, not undone)
   message: string;
+  saveStatus: 'idle' | 'saving' | 'saved' | 'error';
 };
 
 let state: AppState = {
@@ -25,6 +26,7 @@ let state: AppState = {
   view: defaultView(),
   fabrication: defaultFabrication(),
   trace: defaultTrace(),
+  saveStatus: 'idle',
   message: 'Start with the Kirat sample or upload your logo.',
 };
 const listeners = new Set<() => void>();
@@ -44,6 +46,8 @@ function set(next: AppState) {
 export const useApp = <T>(select: (s: AppState) => T) => useSyncExternalStore(subscribe, () => select(state));
 export const useDesign = () => useApp((s) => s.design.present);
 export const useView = () => useApp((s) => s.view);
+
+export const setSaveStatus = (saveStatus: AppState['saveStatus']) => set({ ...state, saveStatus });
 
 export const say = (message: string) => set({ ...state, message });
 export const setTrace = (patch: Partial<TraceOptions>) =>
@@ -75,12 +79,11 @@ export function editDesign(fn: (d: DesignState) => DesignState, message?: string
 // Load a whole design (open file, restore autosave): fresh history, fresh view.
 export function loadDesign(design: DesignState, message: string, fabrication = state.fabrication) {
   lastCoalesce = null;
-  const first = design.artwork?.elements[0]?.id ?? null;
   set({
     ...state,
     design: historyOf(design),
     fabrication,
-    view: { ...defaultView(), selected: first },
+    view: { ...defaultView(), selected: null, selectedGroup: '__board' },
     message,
   });
 }

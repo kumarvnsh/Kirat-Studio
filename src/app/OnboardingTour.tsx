@@ -18,10 +18,10 @@ export const TOUR_STEPS: TourStep[] = [
     focus: 'left',
     eyebrow: 'STEP 1 OF 4 · UPLOAD & TRACE',
     title: 'Start with your logo or sample artwork',
-    body: 'Upload an SVG for exact vector outlines and groups, or drop a PNG/JPG to reconstruct contours automatically. Switch between 3D Assembly and 2D Trace in the top bar to verify holes and small details.',
+    body: 'In Design, choose Import / replace artwork. Use an SVG for original vectors, or a PNG/JPG to reconstruct contours. Review outlines in 2D before choosing constructions.',
     tips: [
-      'Click "Kirat sample" or "Type text" in 01 Artwork to experiment immediately.',
-      'Check "I reviewed the traced shapes" once you are happy with the outlines.',
+      'The import dialog includes Kirat sample and Type text to experiment.',
+      'Check "I reviewed the artwork outlines" in the import dialog after reviewing.',
     ],
   },
   {
@@ -29,7 +29,7 @@ export const TOUR_STEPS: TourStep[] = [
     focus: 'right',
     eyebrow: 'STEP 2 OF 4 · STRUCTURE & CONSTRUCTIONS',
     title: 'Organize groups & pick 3D constructions visually',
-    body: 'Use the right-hand Structure Tree to select the Board, a Group (Symbol, Wordmark, Tagline), or individual letters. Pick a construction card to see its live Rear-to-Front Cross-Section Stack and millimetre dimensions.',
+    body: 'Select Board, a group or a shape from Layers on the left. Its properties appear on the right. Choose Change under Construction to compare visual references; expand Anatomy for live project layers.',
     tips: [
       'Drag and drop letters between groups or double-click any name to rename it.',
       'Each lit group has its own LED circuit (White Kelvin, single RGB colour, or Match Artwork).',
@@ -40,7 +40,7 @@ export const TOUR_STEPS: TourStep[] = [
     focus: 'center',
     eyebrow: 'STEP 3 OF 4 · DAY/NIGHT & ASSEMBLY',
     title: 'Preview illumination & piece-by-piece assembly',
-    body: 'Test your sign under Day, Dusk, and Night lighting above the viewport. In 03 Build, drag the Exploded View slider to separate all 10 layers or press Play Assembly to watch the sign build from rear GI cover to front faces.',
+    body: 'Switch to Assembly for named steps, playback, layer visibility and an exploded view. Time of day and sign power remain independent controls above the canvas.',
     tips: [
       'Double-click any 3D part (or press F) to zoom the camera onto it.',
       'Press I to isolate the selected part, or Esc to restore the complete sign.',
@@ -51,10 +51,10 @@ export const TOUR_STEPS: TourStep[] = [
     focus: 'left',
     eyebrow: 'STEP 4 OF 4 · FABRICATION & PRESENTATION',
     title: 'Check CNC toolpaths, bend strips & export sheets',
-    body: 'Open 04 Make to inspect CNC router / laser kerf compensation, narrow-stroke warnings, and flat channelium return bend schedules. Export DXF/CSV files for the workshop or a 2400px Presentation Sheet for your client.',
+    body: 'Open Fabrication to find a part, inspect its outline and tool paths, or review a return strip and bend schedule. Use Export for PNG, presentation sheet, DXF and CSV outputs.',
     tips: [
-      'Switch to "Forming study" in the top bar to animate a letter’s metal return strip bending into shape.',
-      'Use "Presentation sheet ↓" in the header for a ready-to-send Day + Night client board.',
+      'Select a return strip, then choose Forming study to animate its element contours.',
+      'Choose Present for a clean client view, or Export → Day/night presentation sheet.',
     ],
   },
 ];
@@ -307,9 +307,9 @@ export function HelpModal({
                 </p>
               </div>
               <div>
-                <b>Tool Radius &amp; Kerf Compensation (04 Make)</b>
+                <b>Tool Radius &amp; Kerf Compensation (Fabrication)</b>
                 <p>
-                  CNC router bits (e.g. Ø 3 mm) and lasers remove material width. In 04 Make, Kirat Studio offsets
+                  CNC router bits (e.g. Ø 3 mm) and lasers remove material width. In Fabrication, Kirat Studio offsets
                   cutting paths outside outer contours and inside holes without altering your approved artwork.
                 </p>
               </div>

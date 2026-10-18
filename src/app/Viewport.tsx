@@ -1,4 +1,5 @@
-import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
+import { selectionScope } from './selection.ts';
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject, type ReactNode } from 'react';
 import { SignScene } from '../scene/scene.ts';
 import { inside } from '../artwork/contours.js';
 import { loadImage } from '../artwork/import.ts';
@@ -30,12 +31,14 @@ export function Viewport({
   rightOpen = true,
   onToggleLeft,
   onToggleRight,
+  overlay, footer, taskMode = 'design', onPreviewSettings, onBackToFabrication,
 }: {
   traceCanvas: RefObject<HTMLCanvasElement | null>;
   leftOpen?: boolean;
   rightOpen?: boolean;
   onToggleLeft?: () => void;
   onToggleRight?: () => void;
+  overlay?: ReactNode; footer?: ReactNode; taskMode?: string; onPreviewSettings?: () => void; onBackToFabrication?: () => void;
 }) {
   const design = useDesign(),
     view = useView(),
@@ -136,6 +139,8 @@ export function Viewport({
     return () => clearTimeout(t);
   }, [ready, art, view.mode, view.isolate, view.presentation]);
 
+  const [traceZoom, setTraceZoom] = useState(1);
+  const scope = selectionScope(artwork, view);
   const selected = artwork?.elements.find((e) => e.id === view.selected);
   const group = selected && artwork?.groups.find((g) => g.id === selected.group);
   const s = design.settings,
@@ -150,194 +155,49 @@ export function Viewport({
         ? `${formatDimsAllUnits(placedW, placedH)} · Depth ${formatAllUnits(placedD)}`
         : null;
 
-  return (
-    <main>
+  return <main className="studio-canvas">
       <div className="viewportbar">
         <div className="viewbar-left">
-          {onToggleLeft && !view.presentation && (
-            <button
-              className={'panel-toggle' + (leftOpen ? ' on' : '')}
-              title={leftOpen ? 'Collapse left tools panel ([)' : 'Expand left tools panel ([)'}
-              onClick={onToggleLeft}
-            >
-              ◧
-            </button>
-          )}
-          <div className="viewtabs">
-            {(
-              [
-                ['3d', '3D assembly'],
-                ['2d', '2D trace'],
-                ['bend', 'Forming study'],
-              ] as const
-            ).map(([m, label]) => (
-              <button key={m} className={view.mode === m ? 'active' : ''} onClick={() => setMode(m)}>
-                {label}
-              </button>
-            ))}
-          </div>
-          <UnitSelector compact />
+          {onToggleLeft && !view.presentation && <button className="panel-toggle" aria-label="Toggle layers panel" onClick={onToggleLeft}>◧</button>}
+          {view.mode === 'bend' ? <button onClick={onBackToFabrication}>← Back to fabrication</button> : !overlay && <div className="viewtabs">
+            <button className={view.mode === '3d' ? 'active' : ''} onClick={() => setMode('3d')}>3D view</button>
+            {!view.presentation && <button className={view.mode === '2d' ? 'active' : ''} onClick={() => setMode('2d')}>2D outlines</button>}
+          </div>}
         </div>
-        <div className="lightingbuttons">
-          <button
-            className={view.lights ? 'poweron' : ''}
-            title="Toggle sign illumination (L)"
-            onClick={() => {
-              setView({ lights: !view.lights });
-              say(
-                !view.lights
-                  ? 'Illumination on. Glow and spill are visual approximations.'
-                  : 'Illumination off. Day/night environment remains unchanged.',
-              );
-            }}
-          >
-            {view.lights ? '● Lights on' : '○ Lights off'}
-          </button>
-          <div className="env-pills">
-            {(Object.keys(environments) as Environment[]).map((env) => (
-              <button
-                key={env}
-                className={view.environment === env ? 'envon' : ''}
-                onClick={() => setView({ environment: env })}
-              >
-                {environments[env].label}
-              </button>
-            ))}
-          </div>
-          {onToggleRight && !view.presentation && (
-            <button
-              className={'panel-toggle' + (rightOpen ? ' on' : '')}
-              title={rightOpen ? 'Collapse right inspector panel (])' : 'Expand right inspector panel (])'}
-              onClick={onToggleRight}
-            >
-              ◨
-            </button>
-          )}
-        </div>
+        {!overlay && <div className="lightingbuttons">
+          <select aria-label="Time of day" value={view.environment} onChange={e => setView({ environment: e.target.value as Environment })}>
+            {(Object.keys(environments) as Environment[]).map(env => <option key={env} value={env}>{environments[env].label}</option>)}
+          </select>
+          <button aria-pressed={view.lights} className={view.lights ? 'poweron' : ''} onClick={() => setView({ lights: !view.lights })}>{view.lights ? '● Lights on' : '○ Lights off'}</button>
+          {!view.presentation && <button className="preview-settings-button" aria-label="Preview settings" onClick={onPreviewSettings}>⚙</button>}
+          {onToggleRight && !view.presentation && <button className="panel-toggle" aria-label="Toggle properties panel" onClick={onToggleRight}>◨</button>}
+        </div>}
       </div>
-      <div id="viewport">
-        <div id="threehost" ref={host} hidden={view.mode === '2d'} />
-        <TraceView canvasRef={traceCanvas} art={ready ? art!.canvas : null} hidden={view.mode !== '2d'} />
-        {!artwork && <div id="loading">Preparing your signage workspace…</div>}
-        {no3d && (
-          <div id="fallback">
-            3D rendering is unavailable on this device. The 2D contour review is still available.
-          </div>
-        )}
-        <div className="viewbadge">
-          <span>
-            {view.mode === '2d'
-              ? 'ARTWORK / TRACED CONTOURS'
-              : view.mode === 'bend'
-                ? 'GEOMETRIC FORMING / NO PROCESS COMPENSATION'
-                : `${environments[view.environment].label.toUpperCase()} / PRESENTATION PREVIEW (NOT CALIBRATED)`}
-          </span>
-          <b>{artwork?.approved ? 'ARTWORK REVIEWED / CONCEPT MODEL' : 'ARTWORK REVIEW PENDING'}</b>
+      <div id="viewport" className={overlay ? 'has-workspace-overlay' : ''}>
+        <div id="threehost" ref={host} hidden={view.mode === '2d' || !!overlay} />
+        <TraceView canvasRef={traceCanvas} art={ready ? art!.canvas : null} hidden={view.mode !== '2d' || !!overlay} zoom={traceZoom} />
+        {overlay ? <div className="workspace-overlay">{overlay}</div> : <>
+        {!artwork && <div id="loading"><h2>Your next sign starts here.</h2><p>Import artwork or load the Kirat sample.</p></div>}
+        {no3d && view.mode !== '2d' && <div id="fallback">3D is unavailable. Switch to 2D outlines to continue.</div>}
+        {!view.presentation && <div className="viewbadge"><span>{view.mode === '2d' ? (artwork?.origin === 'vector' ? 'ORIGINAL VECTOR OUTLINES' : 'TRACED ARTWORK OUTLINES') : view.mode === 'bend' ? 'GEOMETRIC FORMING STUDY' : 'SIGN PREVIEW'}</span></div>}
+        {scope.ids.length > 0 && view.selectionActive && !view.presentation && <div id="selectionbadge"><b>{scope.label}</b><span>{scope.kind === 'group' ? 'Group · ' + scope.ids.length + ' shapes' : scope.kind === 'multiple' ? 'Multiple selection' : group?.name}</span>
+          <button title="Frame selection" onClick={() => viewer.current?.focusSelection()}>Frame</button></div>}
+        {view.isolate && !view.presentation && <div id="isolationbar"><span>Isolated: {scope.label}</span><button onClick={() => showAll()}>Show all · Esc</button></div>}
+        <div className="camera">
+          {view.mode !== '2d' && <select aria-label="Camera view" defaultValue="perspective" onChange={e => viewer.current?.fit(e.target.value as 'front' | 'perspective' | 'rear' | 'side' | 'top')}>
+            <option value="front">Front</option><option value="perspective">Perspective</option><option value="side">Side</option><option value="top">Top</option><option value="rear">Rear</option></select>}
+          <button aria-label="Zoom out" onClick={() => view.mode === '2d' ? setTraceZoom(z => Math.max(.25,z/1.25)) : viewer.current?.zoom(1.25)}>−</button>
+          <button onClick={() => view.mode === '2d' ? setTraceZoom(1) : viewer.current?.fit()}>Fit</button>
+          <button aria-label="Zoom in" onClick={() => view.mode === '2d' ? setTraceZoom(z => Math.min(8,z*1.25)) : viewer.current?.zoom(.8)}>＋</button>
+          {scope.ids.length > 0 && !view.presentation && <button onClick={() => view.isolate ? showAll() : isolate(scope.ids[0])}>{view.isolate ? 'Show all' : 'Isolate ' + (scope.kind === 'group' ? 'group' : 'selection')}</button>}
         </div>
-        {selected && view.selectionActive && (
-          <div id="selectionbadge">
-            <div className="sel-info">
-              <b>{selected.name}</b> · {group?.name} · {constructionNames[selected.type]}
-              {selected.override ? ' (override)' : ''}
-              {placedDims && <span className="sel-dims">{placedDims}</span>}
-            </div>
-            <div className="sel-actions">
-              {view.mode === '3d' && (
-                <button title="Frame selected part in camera (F)" onClick={() => viewer.current?.focusSelection()}>
-                  Frame · F
-                </button>
-              )}
-              <button title="Isolate selected part (I)" onClick={() => isolate(selected.id)}>
-                Isolate · I
-              </button>
-              <button title="Hide / show selected part (H)" onClick={() => toggleHidden([selected.id])}>
-                Hide · H
-              </button>
-            </div>
-          </div>
-        )}
-        {view.isolate && (
-          <div id="isolationbar">
-            <span>Isolated: {selected?.name ?? 'element'}</span>
-            <button id="exit-isolate" onClick={() => showAll()}>
-              Show all · Esc
-            </button>
-          </div>
-        )}
-        <div className="camera" hidden={view.mode === '2d'}>
-          {(
-            [
-              ['front', 'Front', 'Front elevation (1)'],
-              ['perspective', '3D', '3D perspective view (2)'],
-              ['side', 'Side', 'Side profile view'],
-              ['top', 'Top', 'Top plan view'],
-              ['rear', 'Rear', 'Rear frame & wiring view (3)'],
-            ] as const
-          ).map(([k, label, tip]) => (
-            <button key={k} title={tip} onClick={() => viewer.current?.fit(k)}>
-              {label}
-            </button>
-          ))}
-          <span className="cam-sep" />
-          <button title="Zoom in" onClick={() => viewer.current?.zoom(0.8)}>
-            ＋
-          </button>
-          <button title="Zoom out" onClick={() => viewer.current?.zoom(1.25)}>
-            －
-          </button>
-          {view.selectionActive && selected && (
-            <button title="Zoom to selected element (F)" onClick={() => viewer.current?.focusSelection()}>
-              Frame · F
-            </button>
-          )}
-          <button title="Fit entire board in view" onClick={() => viewer.current?.fit()}>
-            Fit
-          </button>
-          {view.mode === '3d' && (
-            <label className="cam-explode" title="Explode 3D layers rear-to-front">
-              <span>Explode</span>
-              <input
-                type="range"
-                min={0}
-                max={100}
-                value={view.explode}
-                onChange={(e) => setView({ explode: +e.target.value })}
-              />
-            </label>
-          )}
-          <button id="showall" title="Reset view, layers and isolation (Esc)" onClick={() => showAll()}>
-            Show all
-          </button>
-        </div>
-        <div className="viewhint">
-          Drag to orbit · right-drag to pan · scroll to zoom · click part to inspect · double-click or F to frame · ?
-          for shortcuts
-        </div>
+        <div className="viewhint">{view.mode === '2d' ? 'Click an outline to inspect · + / − to zoom · Fit to reset' : 'Drag to orbit · Scroll to zoom · Click a part to inspect'}</div>
+        {!view.presentation && <div className="canvas-disclosure">{view.mode === 'bend' ? 'No process compensation' : 'Visual preview · Lighting not calibrated'}</div>}
+        </>}
       </div>
-      {view.mode === 'bend' && <BendControls />}
-      <div className="statusbar">
-        <div>
-          <b>{artwork ? artwork.elements.filter((e) => e.type !== 'omit').length : '—'}</b>
-          <small>artwork shapes</small>
-        </div>
-        <div>
-          <b>{artwork ? (layout.returnLength / 1000).toFixed(2) + ' m' : '—'}</b>
-          <small>lit return length</small>
-        </div>
-        <div>
-          <b>{artwork ? layout.ledcount : '—'}</b>
-          <small>symbolic LED positions</small>
-        </div>
-        <div title={formatDimsAllUnits(s.width, s.height)}>
-          <b>{formatDimsInUnit(s.width, s.height, unit)}</b>
-          <small>{formatDimsAllUnits(s.width, s.height)}</small>
-        </div>
-      </div>
-      <div id="message" role="status" aria-live="polite">
-        {message}
-      </div>
-    </main>
-  );
+      {view.mode === 'bend' && !overlay && <BendControls />}
+      {footer}
+    </main>;
 }
 
 function BendControls() {
@@ -386,10 +246,12 @@ function TraceView({
   canvasRef,
   art,
   hidden,
+  zoom = 1,
 }: {
   canvasRef: RefObject<HTMLCanvasElement | null>;
   art: HTMLCanvasElement | null;
   hidden: boolean;
+  zoom?: number;
 }) {
   const design = useDesign(),
     artwork = design.artwork,
@@ -418,7 +280,7 @@ function TraceView({
     ctx.scale(ratio, ratio);
     ctx.fillStyle = view.environment === 'day' ? '#e4e9e0' : '#12232c';
     ctx.fillRect(0, 0, W, H);
-    const scale = Math.min((W - 60) / art.width, (H - 120) / art.height),
+    const scale = Math.min((W - 60) / art.width, (H - 120) / art.height) * zoom,
       tx = (W - art.width * scale) / 2,
       ty = (H - art.height * scale) / 2;
     xf.current = { scale, tx, ty };
@@ -479,6 +341,7 @@ function TraceView({
     view.environment,
     view.toolpaths,
     size,
+    zoom,
   ]);
 
   const hitAt = (clientX: number, clientY: number, el: HTMLCanvasElement) => {

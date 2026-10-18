@@ -7,7 +7,7 @@ import { AUTOSAVE, BACKUP, parseProject, readStore, serialise, writeStore } from
 import { computeLayout, sceneInput } from '../domain/layout.ts';
 import { recipes } from '../domain/recipes.ts';
 import { kelvinToHex } from '../domain/lighting.ts';
-import { editDesign, getState, loadDesign, say, setTrace, setView, subscribe } from './store.ts';
+import { editDesign, getState, loadDesign, say, setTrace, setView, setSaveStatus, subscribe } from './store.ts';
 import type { SignScene } from '../scene/scene.ts';
 
 // The renderer, set by <Viewport>. Null when WebGL is unavailable.
@@ -86,7 +86,9 @@ export async function retrace() {
       `${artwork.elements.length} shapes · ${holes} holes · ${artwork.groups.length} groups. ${note}Review groups in the inspector.`,
     );
     setView({
-      selected: artwork.elements[0].id,
+      selected: null,
+      selectedGroup: '__board',
+      selection: [],
       isolate: false,
       selectionActive: false,
       mode: getState().view.mode === 'bend' ? '3d' : getState().view.mode,
@@ -188,10 +190,14 @@ export function startSession() {
     last = d;
     lastFab = f;
     clearTimeout(timer);
+    setSaveStatus(d.artwork ? 'saving' : 'idle');
     timer = setTimeout(() => {
-      if (d.artwork && !writeStore(AUTOSAVE, projectText()) && !warned) {
+      if (!d.artwork) return setSaveStatus('idle');
+      const saved = writeStore(AUTOSAVE, projectText());
+      setSaveStatus(saved ? 'saved' : 'error');
+      if (!saved && !warned) {
         warned = true;
-        say('Autosave failed (browser storage full or blocked). Use Save project to keep a copy.');
+        say('Autosave failed (browser storage full or blocked). Use Save project copy to keep a copy.');
       }
     }, 400);
   });

@@ -1,6 +1,12 @@
+import { StackTable } from './ToolsPanel.tsx';
+import { defaultSettings } from '../domain/project.ts';
+import { getState } from './store.ts';
+import { unitToMm } from '../domain/units.ts';
+import { selectionScope } from './selection.ts';
+import { resizeArtwork } from '../editor/resizeArtwork.ts';
 // Right-hand panel: the structure tree, then properties for whatever is selected —
 // the backing board, a whole group, one letter, or several letters.
-import { useRef, type KeyboardEvent } from 'react';
+import { useRef, useState, type KeyboardEvent } from 'react';
 import { computeLayout, type ElementLayout } from '../domain/layout.ts';
 import { kelvinToHex, LED_TEMPS } from '../domain/lighting.ts';
 import { checkParams, recipes, resolveParams } from '../domain/recipes.ts';
@@ -69,54 +75,16 @@ function isLightHex(hex: string): boolean {
 }
 
 export function Inspector() {
-  const design = useDesign(),
-    a = design.artwork,
-    view = useView();
-  const ids = selectionIds(view).filter((id) => a?.elements.some((e) => e.id === id)),
-    group =
-      view.selectedGroup && view.selectedGroup !== '__board'
-        ? a?.groups.find((g) => g.id === view.selectedGroup)
-        : undefined;
-  return (
-    <aside className="inspector">
-      <div className="eyebrow inspector-head-row">
-        <span>STRUCTURE</span>
-        <UnitSelector compact />
-      </div>
-      <StructureTree />
-      <div className="eyebrow props-head inspector-head-row">
-        <span>PROPERTIES</span>
-        <button
-          type="button"
-          className="apply-inline-btn"
-          title="Commit pending inputs and refresh 3D viewport immediately"
-          onClick={() => applySceneChanges()}
-        >
-          ✓ Apply changes
-        </button>
-      </div>
-      {!a ? null : view.selectedGroup === '__board' ? (
-        <BoardProps a={a} />
-      ) : group ? (
-        <GroupProps a={a} g={group} />
-      ) : ids.length > 1 ? (
-        <MultiProps a={a} ids={ids} />
-      ) : ids.length === 1 ? (
-        <ElementProps a={a} e={a.elements.find((e) => e.id === ids[0])!} />
-      ) : (
-        <BoardProps a={a} />
-      )}
-      {view.isolate && (
-        <button className="full" onClick={() => showAll()}>
-          Exit isolate · show all
-        </button>
-      )}
-      <div className="callout small">
-        Lighting placement is symbolic and uncalculated. Returns have a nominal wall gauge; selected profiles,
-        fixings and tolerances still need fabrication validation.
-      </div>
-    </aside>
-  );
+  const design = useDesign(), a = design.artwork, view = useView();
+  const scope = selectionScope(a, view), group = a?.groups.find(g => g.id === view.selectedGroup);
+  return <section className="inspector"><div className="properties-heading"><span className="eyebrow">{scope.kind === 'empty' ? 'PROPERTIES' : scope.kind.toUpperCase() + (scope.ids.length ? ' · ' + scope.ids.length + ' SHAPES' : '')}</span></div>
+    {!a ? <div className="empty-state"><h2>Make it yours.</h2><p>Import artwork to configure your sign.</p></div> :
+      scope.kind === 'group' && group ? <GroupProps key={group.id} a={a} g={group} /> :
+      scope.kind === 'multiple' ? <MultiProps key={scope.ids.join(',')} a={a} ids={scope.ids} /> :
+      scope.kind === 'shape' ? <ElementProps key={scope.ids[0]} a={a} e={a.elements.find(e => e.id===scope.ids[0])!} /> : <BoardProps a={a} />}
+    {view.isolate && <button className="full" onClick={() => showAll()}>Exit isolate · Show all</button>}
+    <p className="inspector-disclaimer">Concept geometry. Lighting, fixings and tolerances need fabrication validation.</p>
+  </section>;
 }
 
 // ——— Board overview & quick settings ———
@@ -141,10 +109,8 @@ function BoardProps({ a }: { a: Artwork }) {
         <Swatch colors={[s.boardcolor]} /> <b>Board structure</b>{' '}
         <small>{a.groups.length} groups</small>
       </div>
-      <div className="units-banner">
-        <b>Board size:</b> {formatDimsAllUnits(s.width, s.height)}
-      </div>
-      <CrossSectionDiagram settings={s} />
+
+
       <div className="pair">
         <ScrubInput
           label="Board width"
@@ -186,14 +152,28 @@ function BoardProps({ a }: { a: Artwork }) {
             setSetting(
               'groupSpacing',
               +(v - layout.naturalBoardGroupGap).toFixed(1),
-              `Space between groups set to ${formatAllUnits(v)}.`,
+              `Space between groups set to ${formatSelectedUnit(v)}.`,
               scrubbing,
             )
           }
         />
       )}
-      <div className="recipe">
-        <div className="sectionlabel">GROUPS &amp; CHARACTER DIMENSIONS (mm · in · ft)</div>
+      <ColorField
+        label="ACP fascia finish"
+        value={s.boardcolor}
+        fallback="#243843"
+        previewColor={s.boardcolor}
+        palette={artworkPalette(a)}
+        onCommit={(c, live) => setSetting('boardcolor', c ?? '#243843', 'ACP fascia colour updated.', live)}
+      />
+
+
+      <p className="muted">
+        Select any <b>Group</b> or <b>Shape</b> from Layers (or directly in the 3D scene) to configure its
+        character height, width, depth, spacing, and lighting circuit.
+      </p>
+      <details className="property-details"><summary>Group dimensions overview</summary>      <div className="recipe">
+        <div className="sectionlabel">GROUP DIMENSIONS</div>
         <table className="stack">
           <tbody>
             {a.groups.map((grp) => {
@@ -209,12 +189,12 @@ function BoardProps({ a }: { a: Artwork }) {
                   <td>
                     <b>{grp.name}</b> · {shortType[grp.type]}
                     <small>
-                      Char H: {formatAllUnits(gm.charHeight)}
+                      Char H: {formatSelectedUnit(gm.charHeight)}
                       <br />
-                      Char W: {formatAllUnits(gm.charWidth)} · Depth: {formatAllUnits(gm.charDepth)}
+                      Char W: {formatSelectedUnit(gm.charWidth)} · Depth: {formatSelectedUnit(gm.charDepth)}
                       <br />
-                      Letter gap: {formatAllUnits(gm.letterGap)}
-                      {a.groups.length > 1 ? ` · Group gap: ${formatAllUnits(gm.groupGap)}` : ''}
+                      Letter gap: {formatSelectedUnit(gm.letterGap)}
+                      {a.groups.length > 1 ? ` · Group gap: ${formatSelectedUnit(gm.groupGap)}` : ''}
                     </small>
                   </td>
                   <td>Edit →</td>
@@ -224,36 +204,11 @@ function BoardProps({ a }: { a: Artwork }) {
           </tbody>
         </table>
       </div>
-      <ColorField
-        label="ACP fascia finish"
-        value={s.boardcolor}
-        fallback="#243843"
-        previewColor={s.boardcolor}
-        palette={artworkPalette(a)}
-        onCommit={(c, live) => setSetting('boardcolor', c ?? '#243843', 'ACP fascia colour updated.', live)}
-      />
-      <label>
-        Default white LED temperature
-        <select
-          value={s.ledTemp}
-          onChange={(e) =>
-            setSetting('ledTemp', +e.target.value, `Board LED temperature set to ${e.target.value} K.`, false)
-          }
-        >
-          {LED_TEMPS.map((k) => (
-            <option key={k} value={k}>
-              {k} K {k <= 3000 ? '(Warm white)' : k <= 4000 ? '(Neutral white)' : '(Cool daylight)'}
-            </option>
-          ))}
-        </select>
-      </label>
-      <button className="full accent" onClick={() => applySceneChanges('Board & group settings applied to 3D view.')}>
-        ✓ Apply board &amp; structure changes
-      </button>
-      <p className="muted">
-        Click any <b>Group</b> or <b>Letter</b> in the tree above (or directly in the 3D scene) to configure its
-        character height, width, depth, spacing, and lighting circuit.
-      </p>
+</details>
+      <details className="property-details"><summary>Anatomy &amp; material thicknesses</summary><CrossSectionDiagram settings={s} /></details>
+      <details className="property-details"><summary>Board structure &amp; materials</summary><StackTable settings={s} /><div className="pair">{(['acp','gi','frame','framewall','backing'] as const).map(key => {
+        const r=numericSettings[key]; return <ScrubInput key={key} label={r.label} min={r.min} max={r.max} step={r.step} value={s[key]} onChange={(v,scrubbing)=>setSetting(key,v,r.label+' updated.',scrubbing)} />;
+      })}</div><label className="check"><input type="checkbox" checked={s.keepart} onChange={e=>setSetting('keepart',e.target.checked)} />Preserve artwork colours</label><label>Uniform face colour<input type="color" value={s.facecolor} onChange={e=>{const facecolor=e.target.value;editDesign(d=>({...d,settings:{...d.settings,facecolor,keepart:false}}),'Uniform face colour updated.','uniform-face');}} /></label><button className="full" onClick={()=>editDesign(d=>({...d,settings:defaultSettings()}),'Board defaults restored.')}>Reset board defaults</button></details>
     </div>
   );
 }
@@ -280,7 +235,7 @@ function GroupProps({ a, g }: { a: Artwork; g: ArtworkGroup }) {
           params: { [key]: value },
           ...(key === 'depth' || key === 'thickness' ? { charDepth: null } : {}),
         }),
-      `${g.name}: ${recipe.params[key].label} set to ${formatAllUnits(value)}.`,
+      `${g.name}: ${recipe.params[key].label} set to ${formatSelectedUnit(value)}.`,
       scrubbing ? `param-${g.id}-${key}` : undefined,
     );
   };
@@ -300,61 +255,19 @@ function GroupProps({ a, g }: { a: Artwork; g: ArtworkGroup }) {
       <div className="props-title">
         <Swatch colors={grpCols} /> <b>{g.name}</b> <small>group · {els.length} letters</small>
       </div>
-      {gm && (
-        <div className="units-banner">
-          <div>
-            <b>Char H × W:</b> {formatAllUnits(gm.charHeight)} × {formatAllUnits(gm.charWidth)}
-          </div>
-          <div>
-            <b>Depth:</b> {formatAllUnits(gm.charDepth)} · <b>Spacing:</b> {formatAllUnits(gm.letterGap)}
-          </div>
-        </div>
-      )}
-      <CrossSectionDiagram
-        settings={design.settings}
-        type={g.type}
-        params={resolved}
-        faceColor={g.faceColor ?? (grpCols[0] === 'metal' ? undefined : grpCols[0])}
-        returnColor={g.returnColor}
-        glowColor={glowHex}
-      />
-      <TextField
+
+
+      <details className="name-details"><summary>Rename group</summary><TextField
         label="Group name"
         value={g.name}
         onCommit={(v) => editArtwork((x) => renameGroup(x, g.id, v))}
-      />
+      /></details>
       {gm && (
         <div className="recipe">
-          <div className="sectionlabel">CHARACTER DIMENSIONS &amp; SPACING (mm / in / ft)</div>
+          <div className="sectionlabel">SIZE &amp; SPACING</div>
           <div className="pair">
-            <ScrubInput
-              label="Character height"
-              min={5}
-              max={4000}
-              step={1}
-              value={gm.charHeight}
-              onChange={(v, scrubbing) =>
-                editArtwork(
-                  (x) => setGroup(x, g.id, { charHeight: v }),
-                  `${g.name} character height set to ${formatAllUnits(v)}.`,
-                  scrubbing ? `gch-${g.id}` : undefined,
-                )
-              }
-            />
-            <ScrubInput
-              label="Character width"
-              min={5}
-              max={4000}
-              step={1}
-              value={gm.charWidth}
-              onChange={(v, scrubbing) =>
-                editArtwork(
-                  (x) => setGroup(x, g.id, { charWidth: v }),
-                  `${g.name} character width set to ${formatAllUnits(v)}.`,
-                  scrubbing ? `gcw-${g.id}` : undefined,
-                )
-              }
-            />
+            <SelectionSizing groupId={g.id} ids={ids} />
+
           </div>
           <div className="pair">
             <ScrubInput
@@ -379,7 +292,7 @@ function GroupProps({ a, g }: { a: Artwork; g: ArtworkGroup }) {
                             }
                           : undefined,
                     }),
-                  `${g.name} character depth set to ${formatAllUnits(v)}.`,
+                  `${g.name} character depth set to ${formatSelectedUnit(v)}.`,
                   scrubbing ? `gcd-${g.id}` : undefined,
                 )
               }
@@ -394,7 +307,7 @@ function GroupProps({ a, g }: { a: Artwork; g: ArtworkGroup }) {
                 onChange={(v, scrubbing) =>
                   editArtwork(
                     (x) => setGroup(x, g.id, { letterSpacing: +(v - gm.naturalLetterGap).toFixed(1) }),
-                    `${g.name} character spacing set to ${formatAllUnits(v)}.`,
+                    `${g.name} character spacing set to ${formatSelectedUnit(v)}.`,
                     scrubbing ? `gls-${g.id}` : undefined,
                   )
                 }
@@ -402,7 +315,7 @@ function GroupProps({ a, g }: { a: Artwork; g: ArtworkGroup }) {
             )}
           </div>
           {a.groups.length > 1 && (
-            <ScrubInput
+            <details className="property-details"><summary>Group positioning</summary><ScrubInput
               label="Space between groups"
               min={0}
               max={2500}
@@ -414,11 +327,11 @@ function GroupProps({ a, g }: { a: Artwork; g: ArtworkGroup }) {
                     setGroup(x, g.id, {
                       groupGap: +(v - gm.naturalGroupGap - (design.settings.groupSpacing ?? 0)).toFixed(1),
                     }),
-                  `Space between ${g.name} and adjacent group set to ${formatAllUnits(v)}.`,
+                  `Space between ${g.name} and adjacent group set to ${formatSelectedUnit(v)}.`,
                   scrubbing ? `ggap-${g.id}` : undefined,
                 )
               }
-            />
+            /></details>
           )}
           {hasCustomSizing && (
             <button
@@ -448,30 +361,11 @@ function GroupProps({ a, g }: { a: Artwork; g: ArtworkGroup }) {
         value={g.type}
         onChange={(t) =>
           editArtwork(
-            (x) => setGroup(x, g.id, { type: t as ConstructionType, applyToOverrides: true }),
+            (x) => setGroup(x, g.id, { type: t as ConstructionType }),
             `${g.name} set to ${recipes[t as ConstructionType].name}.`,
           )
         }
       />
-      {Object.keys(recipe.params).length > 0 && (
-        <div className="recipe">
-          <div className="sectionlabel">{recipe.name.toUpperCase()} PARAMETERS (DRAG ↔ TO SCRUB)</div>
-          <div className="pair">
-            {Object.entries(recipe.params).map(([key, p]) => (
-              <ScrubInput
-                key={key + g.id + g.type}
-                label={p.label}
-                min={p.min}
-                max={p.max}
-                step={p.step}
-                value={resolved[key]}
-                onChange={(v, scrubbing) => setParam(key, v, scrubbing)}
-                onInvalid={() => say(`${p.label} must be between ${p.min} and ${p.max} mm.`)}
-              />
-            ))}
-          </div>
-        </div>
-      )}
       <ColorField
         label={g.type === 'halo' || g.type === 'metal' ? 'Face colour (painted)' : 'Face colour'}
         value={g.faceColor}
@@ -504,8 +398,27 @@ function GroupProps({ a, g }: { a: Artwork; g: ArtworkGroup }) {
               )
             }
           />
-          <GroupLightingField a={a} g={g} boardTemp={design.settings.ledTemp} />
+          <details className="property-details"><summary>Group lighting</summary><GroupLightingField a={a} g={g} boardTemp={design.settings.ledTemp} /></details>
         </>
+      )}
+      {Object.keys(recipe.params).length > 0 && (
+        <details className="property-details"><summary>Recipe dimensions</summary><div className="recipe">
+          <div className="sectionlabel">{recipe.name.toUpperCase()} PARAMETERS (DRAG ↔ TO SCRUB)</div>
+          <div className="pair">
+            {Object.entries(recipe.params).map(([key, p]) => (
+              <ScrubInput
+                key={key + g.id + g.type}
+                label={p.label}
+                min={p.min}
+                max={p.max}
+                step={p.step}
+                value={resolved[key]}
+                onChange={(v, scrubbing) => setParam(key, v, scrubbing)}
+                onInvalid={() => say(`${p.label} must be between ${p.min} and ${p.max} mm.`)}
+              />
+            ))}
+          </div>
+        </div></details>
       )}
       {overrides > 0 && (
         <button
@@ -520,9 +433,7 @@ function GroupProps({ a, g }: { a: Artwork; g: ArtworkGroup }) {
           Clear {overrides} letter override{overrides > 1 ? 's' : ''}
         </button>
       )}
-      <button className="full accent" onClick={() => applySceneChanges(`${g.name} changes applied to 3D view.`)}>
-        ✓ Apply group changes
-      </button>
+
       <div className="row">
         <button onClick={() => (selectGroup(g.id), viewer.current?.focusSelection())}>Frame in 3D</button>
         <button onClick={() => (selectGroup(g.id), isolate(null))}>Isolate</button>
@@ -530,6 +441,14 @@ function GroupProps({ a, g }: { a: Artwork; g: ArtworkGroup }) {
       <button className="full" onClick={() => toggleHidden(ids)}>
         Hide / show group
       </button>
+      <details className="property-details"><summary>Anatomy &amp; material thicknesses</summary><CrossSectionDiagram
+        settings={design.settings}
+        type={g.type}
+        params={resolved}
+        faceColor={g.faceColor ?? (grpCols[0] === 'metal' ? undefined : grpCols[0])}
+        returnColor={g.returnColor}
+        glowColor={glowHex}
+      /></details>
     </div>
   );
 }
@@ -652,24 +571,8 @@ function ElementProps({ a, e }: { a: Artwork; e: ArtworkElement }) {
       <div className="props-title">
         <Swatch colors={[effCol]} /> <b>{e.name}</b> <small>in {g.name}</small>
       </div>
-      {placed && (
-        <div className="units-banner">
-          <div>
-            <b>W × H:</b> {formatDimsAllUnits(placedW, placedH)}
-          </div>
-          <div>
-            <b>Depth:</b> {formatAllUnits(placedDepth)}
-            {gm ? ` · Group spacing: ${formatAllUnits(gm.letterGap)}` : ''}
-          </div>
-        </div>
-      )}
-      <CrossSectionDiagram
-        settings={design.settings}
-        type={e.type}
-        params={{ ...resolved, ...(recipe.lit ? { depth: placedDepth } : { thickness: placedDepth }) }}
-        faceColor={effCol === 'metal' ? undefined : effCol}
-        returnColor={g.returnColor}
-      />
+
+
       <TextField
         label="Name"
         value={e.name}
@@ -678,36 +581,10 @@ function ElementProps({ a, e }: { a: Artwork; e: ArtworkElement }) {
       <GroupSelect a={a} value={e.group} ids={[e.id]} />
       {placed && (
         <div className="recipe">
-          <div className="sectionlabel">CHARACTER DIMENSIONS &amp; SPACING (mm / in / ft)</div>
+          <div className="sectionlabel">SIZE &amp; SPACING</div>
           <div className="pair">
-            <ScrubInput
-              label="Character height"
-              min={5}
-              max={4000}
-              step={1}
-              value={placedH}
-              onChange={(v, scrubbing) =>
-                editArtwork(
-                  (x) => setElements(x, [e.id], { charHeight: v }),
-                  `${e.name} height set to ${formatAllUnits(v)}.`,
-                  scrubbing ? `ech-${e.id}` : undefined,
-                )
-              }
-            />
-            <ScrubInput
-              label="Character width"
-              min={5}
-              max={4000}
-              step={1}
-              value={placedW}
-              onChange={(v, scrubbing) =>
-                editArtwork(
-                  (x) => setElements(x, [e.id], { charWidth: v }),
-                  `${e.name} width set to ${formatAllUnits(v)}.`,
-                  scrubbing ? `ecw-${e.id}` : undefined,
-                )
-              }
-            />
+            <SelectionSizing ids={[e.id]} />
+
           </div>
           <div className="pair">
             <ScrubInput
@@ -719,7 +596,7 @@ function ElementProps({ a, e }: { a: Artwork; e: ArtworkElement }) {
               onChange={(v, scrubbing) =>
                 editArtwork(
                   (x) => setElements(x, [e.id], { charDepth: v }),
-                  `${e.name} depth set to ${formatAllUnits(v)}.`,
+                  `${e.name} depth set to ${formatSelectedUnit(v)}.`,
                   scrubbing ? `ecd-${e.id}` : undefined,
                 )
               }
@@ -733,7 +610,7 @@ function ElementProps({ a, e }: { a: Artwork; e: ArtworkElement }) {
               onChange={(v, scrubbing) =>
                 editArtwork(
                   (x) => setElements(x, [e.id], { letterSpacing: v }),
-                  `${e.name} spacing offset set to ${formatAllUnits(v)}.`,
+                  `${e.name} spacing offset set to ${formatSelectedUnit(v)}.`,
                   scrubbing ? `els-${e.id}` : undefined,
                 )
               }
@@ -789,9 +666,7 @@ function ElementProps({ a, e }: { a: Artwork; e: ArtworkElement }) {
           )
         }
       />
-      <button className="full accent" onClick={() => applySceneChanges(`${e.name} changes applied to 3D view.`)}>
-        ✓ Apply character changes
-      </button>
+
       <div className="row">
         <button onClick={() => viewer.current?.focusSelection()}>Frame in 3D</button>
         <button onClick={() => isolate(e.id)}>Isolate</button>
@@ -808,6 +683,13 @@ function ElementProps({ a, e }: { a: Artwork; e: ArtworkElement }) {
           </>
         )}
       </div>
+      <details className="property-details"><summary>Anatomy &amp; material thicknesses</summary><CrossSectionDiagram
+        settings={design.settings}
+        type={e.type}
+        params={{ ...resolved, ...(recipe.lit ? { depth: placedDepth } : { thickness: placedDepth }) }}
+        faceColor={effCol === 'metal' ? undefined : effCol}
+        returnColor={g.returnColor}
+      /></details>
     </div>
   );
 }
@@ -826,6 +708,7 @@ function MultiProps({ a, ids }: { a: Artwork; ids: string[] }) {
         <Swatch colors={multiCols} />{' '}
         <b>{ids.length} letters</b> <small>from {groups.map((g) => g.name).join(', ')}</small>
       </div>
+      <SelectionSizing ids={ids} />
       <GroupSelect a={a} value={groups.length === 1 ? groups[0].id : ''} ids={ids} />
       <div className="sectionlabel">CONSTRUCTION FOR {ids.length} LETTERS</div>
       <ConstructionPicker
@@ -853,9 +736,7 @@ function MultiProps({ a, ids }: { a: Artwork; ids: string[] }) {
           )
         }
       />
-      <button className="full accent" onClick={() => applySceneChanges(`${ids.length} letters applied to 3D view.`)}>
-        ✓ Apply changes
-      </button>
+
       <div className="row">
         <button onClick={() => isolate(null)}>Isolate</button>
         <button onClick={() => toggleHidden(ids)}>Hide / show</button>
@@ -1063,7 +944,7 @@ function ElementDetails({ e, holes }: { e: ElementLayout; holes: number }) {
                     {mm(p.z0 - base)}–{mm(p.z1 - base)} mm from fascia
                   </small>
                 </td>
-                <td title={formatAllUnits(p.z1 - p.z0)}>{formatAllUnits(p.z1 - p.z0)}</td>
+                <td title={formatSelectedUnit(p.z1 - p.z0)}>{formatSelectedUnit(p.z1 - p.z0)}</td>
               </tr>
             ))}
           <tr>
@@ -1071,7 +952,7 @@ function ElementDetails({ e, holes }: { e: ElementLayout; holes: number }) {
               <b>Projection (Depth)</b>
             </td>
             <td>
-              <b>{formatAllUnits(proj)}</b>
+              <b>{formatSelectedUnit(proj)}</b>
             </td>
           </tr>
         </tbody>
@@ -1083,3 +964,34 @@ function ElementDetails({ e, holes }: { e: ElementLayout; holes: number }) {
 }
 
 const blurOnEnter = (e: KeyboardEvent<HTMLInputElement>) => e.key === 'Enter' && e.currentTarget.blur();
+
+function formatSelectedUnit(value: number) {
+  return formatInUnit(value, getCurrentUnit());
+}
+function getCurrentUnit() { return getState().view.unit ?? 'mm'; }
+
+function SelectionSizing({ ids, groupId }: { ids: string[]; groupId?: string }) {
+  const design=useDesign(), view=useView(), layout=computeLayout(design);
+  const [linked,setLinked]=useState(true), [error,setError]=useState('');
+  const selected=ids.map(id=>layout.elements.find(e=>e.id===id)).filter(e=>!!e);
+  if(!selected.length) return null;
+  const gm=groupId?layout.groupMetrics[groupId]:null;
+  const heights=selected.map(e=>e.bounds[3]-e.bounds[1]), widths=selected.map(e=>e.bounds[2]-e.bounds[0]);
+  const height=gm?.charHeight??heights[0], width=gm?.charWidth??widths[0];
+  const commit=(axis:'height'|'width',value:number,scrubbing=false)=>{
+    try { const artwork=resizeArtwork(design,{ids,groupId},axis,value,linked);editArtwork(()=>artwork,'Selection resized.',scrubbing?'resize-'+(groupId??ids.join(','))+'-'+axis:undefined);setError(''); }
+    catch(err){setError((err as Error).message);}
+  };
+  const mixed=(values:number[])=>!groupId&&values.some(v=>Math.abs(v-values[0])>.05);
+  return <div className="selection-sizing"><div className="sizing-link"><span>Character size</span><button aria-pressed={linked} onClick={()=>setLinked(!linked)} title="Keep each shape’s current proportions">{linked?'↔ Linked':'↔ Unlinked'}</button></div>
+    {ids.length>1&&!groupId&&<p className="muted">Scale from {selected[0].name}; each shape keeps its own dimensions.</p>}
+    <div className="pair">{(['height','width'] as const).map(axis=>mixed(axis==='height'?heights:widths)?<MixedSize key={axis} label={axis==='height'?'Character height':'Character width'} onCommit={v=>commit(axis,v)} />:
+      <ScrubInput key={axis} label={axis==='height'?'Character height':'Character width'} min={5} max={4000} step={.1} value={axis==='height'?height:width} onChange={(v,s)=>commit(axis,v,s)} />)}</div>
+    {ids.length===1&&design.artwork&&<button className="text-button" onClick={()=>editArtwork(a=>setElements(a,ids,{charHeight:null,charWidth:null}),'Size reset to group.')}>Reset size to group</button>}
+    {error&&<p className="field-error" role="alert">{error}</p>}
+  </div>;
+}
+function MixedSize({label,onCommit}:{label:string;onCommit:(value:number)=>void}) {
+  const unit=useView().unit??'mm';const [text,setText]=useState('');
+  return <label>{label}<input type="number" placeholder="Mixed" value={text} onChange={e=>setText(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')e.currentTarget.blur();if(e.key==='Escape'){setText('');e.preventDefault();e.stopPropagation();}}} onBlur={()=>{if(text.trim()){onCommit(unitToMm(Number(text),unit));setText('');}}} /><small>{unit} · First shape is the scale anchor</small></label>;
+}
