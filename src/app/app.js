@@ -1,6 +1,8 @@
 import { maskFromRGBA, traceMask, inside, perimeter } from '../artwork/contours.js';
 import { SignScene, layerNames } from '../scene/scene.js';
 import { resetAssemblyView, isolateElement } from '../editor/view-state.js';
+import { attachDetails, autoGroup, applyGroupType } from '../artwork/grouping.js';
+import { createHistory } from '../editor/history.js';
 const $ = (s) => document.querySelector(s),
   esc = (s) =>
     String(s ?? '').replace(
@@ -21,8 +23,9 @@ const numeric = [
   'artscale',
 ];
 let state = {
-    version: 1,
+    version: 2,
     components: [],
+    groups: [],
     selected: null,
     step: 7,
     layers: Array(7).fill(true),
@@ -77,6 +80,65 @@ const descriptions = [
   'LED bodies are symbolic positions—not a manufacturer layout or electrical calculation.',
   'Faces and graphics complete the sign. Day/night illumination is a visual approximation.',
 ];
+// Design state that undo covers. Geometry only changes on retrace, which starts a fresh history.
+const designKeys = [...numeric, 'boardcolor', 'facecolor', 'keepart'];
+const history = createHistory({
+  capture: () =>
+    JSON.stringify({
+      components: state.components.map(({ id, name, type, group, override }) => ({
+        id,
+        name,
+        type,
+        group,
+        override,
+      })),
+      groups: state.groups,
+      settings: Object.fromEntries(designKeys.map((k) => [k, state[k]])),
+    }),
+  apply: (snap) => {
+    const d = JSON.parse(snap),
+      byId = new Map(d.components.map((c) => [c.id, c]));
+    state.components = state.components.map((c) => ({ ...c, ...byId.get(c.id) }));
+    state.groups = d.groups;
+    Object.assign(state, d.settings);
+    updateInputs();
+    renderElements();
+    rebuild();
+    autosave();
+  },
+});
+function syncHistoryUI() {
+  $('#undo').disabled = !history.canUndo;
+  $('#redo').disabled = !history.canRedo;
+}
+function commit() {
+  if (history.commit()) autosave();
+  syncHistoryUI();
+}
+const AUTOSAVE = 'kirat-studio-autosave',
+  BACKUP = 'kirat-studio-backup';
+let autosaveTimer = null,
+  autosaveWarned = false;
+function autosave() {
+  clearTimeout(autosaveTimer);
+  autosaveTimer = setTimeout(() => {
+    if (!state.artData) return;
+    try {
+      localStorage.setItem(AUTOSAVE, serialise());
+    } catch {
+      if (!autosaveWarned)
+        message('Autosave failed (browser storage full or blocked). Use Save project to keep a copy.');
+      autosaveWarned = true;
+    }
+  }, 400);
+}
+function readStore(key) {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
 function message(t) {
   $('#message').textContent = t;
 }
@@ -168,6 +230,7 @@ function rebuild(fit = false) {
     stats();
     inspector();
     draw2d();
+    commit();
   } catch (e) {
     console.error(e);
     message(e.message);
@@ -210,16 +273,18 @@ document.querySelectorAll('[data-panel]').forEach(
         .forEach((p) => p.classList.toggle('active', p.id === 'panel-' + b.dataset.panel));
     }),
 );
+const groupOf = (p) => state.groups.find((g) => g.id === p.group);
+const typeLabel = (p) => typeNames[p.type] + (p.override ? ' (override)' : '');
 function renderElements() {
   const opts = state.components
-    .map((p) => `<option value="${esc(p.id)}">${esc(p.name)} · ${typeNames[p.type]}</option>`)
+    .map((p) => `<option value="${esc(p.id)}">${esc(p.name)} · ${typeLabel(p)}</option>`)
     .join('');
   $('#selected').innerHTML = opts || '<option>No artwork yet</option>';
   $('#selected').value = state.selected;
   $('#elementlist').innerHTML = state.components
     .map(
       (p) =>
-        `<button class="element ${p.id === state.selected ? 'active' : ''}" data-id="${esc(p.id)}"><i style="background:${p.color}"></i><span>${esc(p.name)}<small>${typeNames[p.type]}</small></span><em>${p.regions.reduce((s, r) => s + r.holes.length, 0)} holes</em></button>`,
+        `<button class="element ${p.id === state.selected ? 'active' : ''}" data-id="${esc(p.id)}"><i style="background:${p.color}"></i><span>${esc(p.name)}<small>${esc(groupOf(p)?.name ?? '')} · ${typeLabel(p)}</small></span><em>${p.regions.reduce((s, r) => s + r.holes.length, 0)} holes</em></button>`,
     )
     .join('');
   document.querySelectorAll('[data-id]').forEach((b) => (b.onclick = () => select(b.dataset.id)));
@@ -230,6 +295,12 @@ function inspector() {
   if (!p) return;
   $('#partname').value = p.name;
   $('#parttype').value = p.type;
+  $('#partgroup').innerHTML =
+    state.groups
+      .map((g) => `<option value="${esc(g.id)}">${esc(g.name)} · ${typeNames[g.type]}</option>`)
+      .join('') + '<option value="__new">+ New group</option>';
+  $('#partgroup').value = p.group;
+  $('#groupname').value = groupOf(p)?.name ?? '';
   const b = p.bounds,
     s = viewer?.scale || 0;
   const w = (b[2] - b[0]) * s * 1000,
@@ -240,7 +311,7 @@ function inspector() {
   $('#partdetails').innerHTML =
     `<b>${esc(p.name)}</b><br>Approx. ${Math.round(w)} × ${Math.round(h)} mm<br>${p.regions.length} outer region(s) / ${p.regions.reduce((n, r) => n + r.holes.length, 0)} inner hole(s)<br>${L.toFixed(3)} m nominal contour perimeter<br><small>Perimeter is not a compensated strip cut length.</small>`;
   $('#selectionbadge').hidden = false;
-  $('#selectionbadge').textContent = p.name + ' / ' + typeNames[p.type];
+  $('#selectionbadge').textContent = p.name + ' / ' + (groupOf(p)?.name ?? '') + ' / ' + typeLabel(p);
 }
 function select(id) {
   state.selectionActive = true;
@@ -260,23 +331,54 @@ $('#partname').onchange = () => {
   if (p) {
     p.name = $('#partname').value.trim() || p.name;
     renderElements();
+    commit();
   }
+};
+$('#groupname').onchange = () => {
+  const p = state.components.find((p) => p.id === state.selected),
+    g = p && groupOf(p);
+  if (g) {
+    g.name = $('#groupname').value.trim() || g.name;
+    renderElements();
+    commit();
+  }
+};
+$('#partgroup').onchange = () => {
+  const p = state.components.find((p) => p.id === state.selected);
+  if (!p) return;
+  let g = state.groups.find((g) => g.id === $('#partgroup').value);
+  if (!g) {
+    const n = Math.max(0, ...state.groups.map((g) => +g.id.slice(1) || 0)) + 1;
+    g = { id: 'g' + n, name: 'Group ' + n, type: p.type };
+    state.groups.push(g);
+  }
+  p.group = g.id;
+  p.override = p.type !== g.type;
+  state.groups = state.groups.filter((g) => state.components.some((c) => c.group === g.id));
+  renderElements();
+  rebuild();
+  message('Moved ' + p.name + ' to ' + g.name + '.');
 };
 $('#applytype').onclick = () => {
   const type = $('#parttype').value,
     bulk = $('#bulk').value;
-  const max = Math.max(...state.components.map((p) => p.pixels), 1);
-  state.components.forEach((p) => {
-    if (
-      bulk === 'all' ||
-      (bulk === 'selected' && p.id === state.selected) ||
-      (bulk === 'small' && p.pixels < max * 0.025)
-    )
-      p.type = type;
-  });
+  const sel = state.components.find((p) => p.id === state.selected);
+  if (!sel) return;
+  if (bulk === 'selected') {
+    sel.type = type;
+    sel.override = type !== groupOf(sel)?.type;
+  } else
+    for (const g of bulk === 'all' ? state.groups : [groupOf(sel)]) {
+      state.components.forEach((p) => p.group === g.id && (p.override = false));
+      applyGroupType(state.groups, state.components, g.id, type);
+    }
   renderElements();
   rebuild();
-  message('Construction updated. Check small strokes and isolated dots in the 2D trace.');
+  message(
+    bulk === 'selected'
+      ? sel.name + ' set to ' + typeNames[type] + ' as an override.'
+      : (bulk === 'all' ? 'All groups' : groupOf(sel).name) + ' set to ' + typeNames[type] + '.',
+  );
 };
 async function loadImage(url) {
   return new Promise((res, rej) => {
@@ -335,11 +437,11 @@ async function trace() {
     for (let i = 0; i < mask.length; i++) if (!mask[i]) image.data[i * 4 + 3] = 0;
     ctx.putImageData(image, 0, 0);
     artCanvas = c;
-    const max = result.components[0].pixels;
-    state.components = result.components.map((p, i) => ({
+    const grouped = autoGroup(attachDetails(result.components));
+    state.groups = grouped.groups;
+    state.components = grouped.components.map((p, i) => ({
       ...p,
       name: 'Element ' + String(i + 1).padStart(2, '0'),
-      type: p.pixels < max * 0.025 ? 'vinyl' : 'front',
     }));
     state.artBounds = [
       Math.min(...state.components.map((p) => p.bounds[0])),
@@ -357,10 +459,13 @@ async function trace() {
     $('#approved').checked = false;
     renderElements();
     rebuild(true);
+    history.reset();
+    syncHistoryUI();
+    autosave();
     $('#traceinfo').textContent =
       `${state.components.length} shapes · ${state.components.reduce((n, p) => n + p.regions.reduce((m, r) => m + r.holes.length, 0), 0)} holes · ${w} × ${h} tracing grid${result.truncated ? ' · Smallest components capped at 100' : ''}`;
     message(
-      'Draft contours generated. Review 2D outlines, exclude unwanted details, and assign constructions. Tiny shapes default to vinyl; check letter dots separately.',
+      'Draft contours generated. Review 2D outlines, exclude unwanted details, and assign constructions. Elements are grouped by row and spacing; groups much smaller than the main lettering default to vinyl. Check groups in the inspector.',
     );
   } catch (e) {
     console.error(e);
@@ -529,6 +634,17 @@ $('#isolate').onclick = () => {
 };
 $('#showall').onclick = showCompleteAssembly;
 $('#exit-isolate').onclick = showCompleteAssembly;
+$('#undo').onclick = () => (history.undo(), syncHistoryUI());
+$('#redo').onclick = () => (history.redo(), syncHistoryUI());
+document.addEventListener('keydown', (e) => {
+  const typing = e.target.matches?.('input:not([type=checkbox]):not([type=range]), select, textarea');
+  if ((e.metaKey || e.ctrlKey) && !typing && (e.key.toLowerCase() === 'z' || e.key.toLowerCase() === 'y')) {
+    e.preventDefault();
+    if (e.key.toLowerCase() === 'y' || e.shiftKey) history.redo();
+    else history.undo();
+    syncHistoryUI();
+  }
+});
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && (state.isolate || state.mode === 'bend')) {
     e.preventDefault();
@@ -626,7 +742,7 @@ function serialise() {
   return JSON.stringify(
     {
       format: 'kirat-signage-studio',
-      version: 1,
+      version: 2,
       state,
       traceSettings: {
         background: $('#background').value,
@@ -647,9 +763,6 @@ $('#save').onclick = () => {
       url = URL.createObjectURL(blob);
     download(url, 'kirat-signage-project.json');
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-    try {
-      localStorage.setItem('kirat-studio-project', text);
-    } catch {}
     message(
       'Project downloaded with traced geometry, settings and face artwork. Keep it to reopen this design.',
     );
@@ -660,7 +773,7 @@ $('#save').onclick = () => {
 function validateProject(p) {
   if (
     p.format !== 'kirat-signage-studio' ||
-    p.version !== 1 ||
+    ![1, 2].includes(p.version) ||
     !p.state ||
     !Array.isArray(p.state.components)
   )
@@ -715,6 +828,30 @@ function validateProject(p) {
     }
   }
   if (points > 50000) throw Error('Project exceeds the contour complexity limit.');
+  if (p.version === 1) {
+    // v1 had no groups: group by layout but keep each element's saved construction.
+    const saved = s.components.map((c) => c.type),
+      g = autoGroup(s.components);
+    s.groups = g.groups;
+    s.components = g.components.map((c, i) => ({
+      ...c,
+      type: saved[i],
+      override: saved[i] !== g.groups.find((x) => x.id === c.group).type,
+    }));
+  }
+  if (
+    !Array.isArray(s.groups) ||
+    s.groups.length > 100 ||
+    s.groups.some(
+      (g) =>
+        !/^[\w-]{1,60}$/.test(g.id) ||
+        typeof g.name !== 'string' ||
+        g.name.length > 60 ||
+        !Object.hasOwn(typeNames, g.type),
+    ) ||
+    s.components.some((c) => !s.groups.some((g) => g.id === c.group) || typeof c.override !== 'boolean')
+  )
+    throw Error('Invalid artwork groups.');
   if (
     typeof s.artData !== 'string' ||
     !s.artData.startsWith('data:image/png;base64,') ||
@@ -732,7 +869,10 @@ function validateProject(p) {
     throw Error('Invalid artwork dimensions.');
   return s;
 }
-async function restoreProject(text) {
+async function restoreProject(
+  text,
+  note = 'Saved project reopened. Retracing will replace its edited element assignments.',
+) {
   const parsed = JSON.parse(text),
     s = validateProject(parsed),
     img = await loadImage(s.artData);
@@ -762,7 +902,10 @@ async function restoreProject(text) {
   updateInputs();
   renderElements();
   setMode('3d');
-  message('Saved project reopened. Retracing will replace its edited element assignments.');
+  history.reset();
+  syncHistoryUI();
+  autosave();
+  message(note);
   $('#loading').hidden = true;
 }
 $('#open').onchange = async () => {
@@ -804,10 +947,33 @@ $('#export').onclick = () => {
   };
   image.src = url;
 };
+// Previous session's autosave becomes the backup before this session writes anything.
+const previous = readStore(AUTOSAVE);
+if (previous)
+  try {
+    localStorage.setItem(BACKUP, previous);
+  } catch {}
+$('#restorebackup').hidden = !readStore(BACKUP);
+$('#restorebackup').onclick = () => {
+  const text = readStore(BACKUP);
+  if (text && confirm('Replace the current design with the previous session backup?'))
+    restoreProject(text, 'Previous session restored. Undo history starts here.').catch((e) =>
+      message('Could not restore backup: ' + e.message),
+    );
+};
+function loadSample() {
+  return useImage('kirat-reference.png', true)
+    .then(() => setMode(viewer ? '3d' : '2d'))
+    .catch((e) => {
+      message(e.message);
+      $('#loading').hidden = true;
+    });
+}
 updateInputs();
-useImage('kirat-reference.png', true)
-  .then(() => setMode(viewer ? '3d' : '2d'))
-  .catch((e) => {
-    message(e.message);
-    $('#loading').hidden = true;
+syncHistoryUI();
+if (previous)
+  restoreProject(previous, 'Last session restored from autosave.').catch((e) => {
+    console.error(e);
+    loadSample();
   });
+else loadSample();
