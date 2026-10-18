@@ -1,15 +1,15 @@
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
-import { SignScene } from '../scene/scene.js';
+import { SignScene } from '../scene/scene.ts';
 import { inside } from '../artwork/contours.js';
 import { loadImage } from '../artwork/import.ts';
-import { constructionNames, sceneInput } from '../domain/project.ts';
+import { constructionNames } from '../domain/project.ts';
+import { computeLayout, sceneInput } from '../domain/layout.ts';
 import { setMode, viewer } from './actions.ts';
-import { getState, say, select, setStats, setView, showAll, useApp, useDesign, useView } from './store.ts';
+import { getState, say, select, setView, showAll, useApp, useDesign, useView } from './store.ts';
 
 export function Viewport({ traceCanvas }: { traceCanvas: RefObject<HTMLCanvasElement | null> }) {
   const design = useDesign(),
     view = useView(),
-    stats = useApp((s) => s.stats),
     message = useApp((s) => s.message);
   const host = useRef<HTMLDivElement>(null);
   const [no3d, setNo3d] = useState(false);
@@ -20,7 +20,7 @@ export function Viewport({ traceCanvas }: { traceCanvas: RefObject<HTMLCanvasEle
 
   useEffect(() => {
     try {
-      viewer.current = new SignScene(host.current, (id: string) => select(id));
+      viewer.current = new SignScene(host.current!, (id: string) => select(id));
     } catch (e) {
       console.error(e);
       setNo3d(true);
@@ -50,13 +50,12 @@ export function Viewport({ traceCanvas }: { traceCanvas: RefObject<HTMLCanvasEle
     const v = viewer.current;
     if (!v || !ready) return;
     v.build(sceneInput(design, getState().view), art!.canvas);
-    setStats({ returnLength: v.returnLength || 0, ledcount: v.ledcount ?? 0, scale: v.scale || 0 });
   }, [design, ready, art, view.night, view.lights, view.brightness, view.mode, view.bend, bendTarget]);
 
   // Cheap visibility pass: stage, layers, explode, isolation, selection.
   useEffect(() => {
     const v = viewer.current;
-    if (!v?.groups || !ready) return;
+    if (!v?.state || !ready) return;
     v.state = sceneInput(design, view);
     v.setVisibility(v.state);
   }, [
@@ -82,7 +81,8 @@ export function Viewport({ traceCanvas }: { traceCanvas: RefObject<HTMLCanvasEle
 
   const selected = artwork?.elements.find((e) => e.id === view.selected);
   const group = selected && artwork?.groups.find((g) => g.id === selected.group);
-  const s = design.settings;
+  const s = design.settings,
+    layout = computeLayout(design);
 
   return (
     <main>
@@ -172,11 +172,11 @@ export function Viewport({ traceCanvas }: { traceCanvas: RefObject<HTMLCanvasEle
           <small>artwork shapes</small>
         </div>
         <div>
-          <b>{stats ? stats.returnLength.toFixed(2) + ' m' : '—'}</b>
-          <small>nominal contour length</small>
+          <b>{artwork ? (layout.returnLength / 1000).toFixed(2) + ' m' : '—'}</b>
+          <small>lit return length</small>
         </div>
         <div>
-          <b>{stats?.ledcount ?? '—'}</b>
+          <b>{artwork ? layout.ledcount : '—'}</b>
           <small>symbolic LED positions</small>
         </div>
         <div>

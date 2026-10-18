@@ -1,5 +1,6 @@
-// Project file format. v3 stores design and fabrication separately; view state is never saved.
-// v1/v2 (prototype) files store one flat `state` object and are migrated on open.
+// Project file format. v4 stores design and fabrication separately; view state is never saved.
+// v3 had board-wide letter dimensions; v4 keeps them per group as recipe params.
+// v1/v2 (prototype) files store one flat `state` object. Older files are migrated on open.
 import {
   checkSettings,
   constructionNames,
@@ -11,9 +12,10 @@ import {
   type FabricationState,
 } from '../domain/project.ts';
 import { autoGroup } from '../artwork/grouping.js';
+import { checkParams } from '../domain/recipes.ts';
 
 export const FORMAT = 'kirat-signage-studio';
-export const VERSION = 3;
+export const VERSION = 4;
 
 export type TraceSettings = { background: string; threshold: number; minpixels: number };
 export type ProjectFile = {
@@ -30,20 +32,41 @@ export function parseProject(text: string): ProjectFile {
   const raw = JSON.parse(text);
   if (raw?.format !== FORMAT) throw Error('Not a Kirat Studio project.');
   let design: DesignState;
-  if (raw.version === 3) design = raw.design;
-  else if (raw.version === 1 || raw.version === 2) design = fromFlatState(raw.state, raw.version);
+  if (raw.version === 4) design = raw.design;
+  else if (raw.version === 3) design = fromV3(raw.design);
+  else if (raw.version === 1 || raw.version === 2) design = fromV3(fromFlatState(raw.state, raw.version));
   else throw Error('Unsupported project version ' + raw.version + '.');
   validateDesign(design);
   return { design, fabrication: {}, traceSettings: raw.traceSettings };
 }
 
-// Prototype files: one flat object mixing design and view fields.
-function fromFlatState(s: any, version: 1 | 2): DesignState {
+const LETTER_KEYS = ['depth', 'gauge', 'face', 'back'] as const;
+
+// v3: depth/gauge/face/back were board-wide. Give them to every front-lit and halo group.
+function fromV3(d: any): DesignState {
+  if (!d?.settings) throw Error('Missing design settings.');
+  const { depth, gauge, face, back, ...rest } = d.settings,
+    old = { depth, gauge, face, back };
+  const settings = { ...defaultSettings(), ...rest } as DesignSettings;
+  if (!d.artwork) return { settings, artwork: null };
+  const groups = d.artwork.groups.map((g: any) =>
+    g.type === 'front' || g.type === 'halo'
+      ? {
+          ...g,
+          params: Object.fromEntries(
+            LETTER_KEYS.filter((k) => typeof old[k] === 'number').map((k) => [k, old[k]]),
+          ),
+        }
+      : g,
+  );
+  return { settings, artwork: { ...d.artwork, groups } };
+}
+
+// Prototype files: one flat object mixing design and view fields. Produces a v3 design.
+function fromFlatState(s: any, version: 1 | 2): any {
   if (!s || !Array.isArray(s.components)) throw Error('Missing artwork data.');
-  const d = defaultSettings();
-  const settings = Object.fromEntries(
-    Object.keys(d).map((k) => [k, s[k] ?? (d as any)[k]]),
-  ) as DesignSettings;
+  const keys = [...Object.keys(defaultSettings()), ...LETTER_KEYS];
+  const settings = Object.fromEntries(keys.filter((k) => k in s).map((k) => [k, s[k]]));
   let elements = s.components,
     groups = s.groups;
   if (version === 1) {
@@ -106,8 +129,14 @@ function validateArtwork(a: Artwork) {
     throw Error('Invalid face artwork.');
   if (!Array.isArray(a.groups) || a.groups.length > 100) throw Error('Invalid artwork groups.');
   for (const g of a.groups)
-    if (!isId(g.id) || typeof g.name !== 'string' || g.name.length > 60 || !isType(g.type))
-      throw Error('Invalid artwork group.');
+    if (
+      !isId(g.id) ||
+      typeof g.name !== 'string' ||
+      g.name.length > 60 ||
+      !isType(g.type) ||
+      (g.params !== undefined && (typeof g.params !== 'object' || checkParams(g.type, g.params)))
+    )
+      throw Error('Invalid artwork group' + (g.params ? ': ' + checkParams(g.type, g.params) : '.'));
   if (!Array.isArray(a.elements) || a.elements.length > 100)
     throw Error('Project exceeds the 100-shape limit.');
   let points = 0;

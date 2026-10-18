@@ -67,3 +67,20 @@ test('unknown formats and versions are rejected', () => {
   assert.throws(() => parseProject('{"format":"other"}'), /Not a Kirat Studio project/);
   assert.throws(() => parseProject('{"format":"kirat-signage-studio","version":9}'), /Unsupported/);
 });
+
+test('v3 board-wide letter dimensions move into front-lit group params', () => {
+  const v3design = parseProject(JSON.stringify(v1)).design as any;
+  v3design.settings = { ...v3design.settings, depth: 80, gauge: 0.8, face: 4, back: 2 };
+  const { design } = parseProject(
+    JSON.stringify({ format: 'kirat-signage-studio', version: 3, design: v3design }),
+  );
+  assert.equal((design.settings as any).depth, undefined);
+  assert.equal(design.settings.backing, 0);
+  assert.deepEqual(design.artwork!.groups[0].params, { depth: 80, gauge: 0.8, face: 4, back: 2 });
+});
+
+test('out-of-range recipe params are rejected', () => {
+  const { design } = parseProject(JSON.stringify(v1));
+  design.artwork!.groups[0].params = { depth: 999 };
+  assert.throws(() => parseProject(serialise({ design, fabrication: {} })), /Return depth/);
+});

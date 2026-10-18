@@ -1,8 +1,9 @@
 import { useState, type KeyboardEvent } from 'react';
-import { perimeter } from '../artwork/contours.js';
+import { computeLayout, type ElementLayout } from '../domain/layout.ts';
+import { checkParams, recipes, resolveParams } from '../domain/recipes.ts';
 import { constructionNames, type Artwork, type ConstructionType } from '../domain/project.ts';
 import { applyConstruction, type ApplyScope } from './actions.ts';
-import { editDesign, isolate, select, showAll, useApp, useDesign, useView } from './store.ts';
+import { editDesign, isolate, say, select, showAll, useDesign, useView } from './store.ts';
 
 const label = (e: { type: ConstructionType; override: boolean }) =>
   constructionNames[e.type] + (e.override ? ' (override)' : '');
@@ -12,11 +13,12 @@ const editArtwork = (fn: (a: Artwork) => Artwork, message?: string) =>
   editDesign((d) => (d.artwork ? { ...d, artwork: fn(d.artwork) } : d), message);
 
 export function Inspector() {
-  const artwork = useDesign().artwork,
-    view = useView(),
-    scale = useApp((s) => s.stats?.scale ?? 0);
+  const design = useDesign(),
+    artwork = design.artwork,
+    view = useView();
   const el = artwork?.elements.find((e) => e.id === view.selected);
   const group = el && artwork!.groups.find((g) => g.id === el.group);
+  const placed = el && computeLayout(design).elements.find((e) => e.id === el.id);
   const [type, setType] = useState<ConstructionType | null>(null);
   const [scope, setScope] = useState<ApplyScope>('group');
   const shownType = type ?? el?.type ?? 'front';
@@ -51,6 +53,17 @@ export function Inspector() {
     editArtwork(
       (a) => ({ ...a, elements, groups: groups.filter((g) => elements.some((e) => e.group === g.id)) }),
       `Moved ${el.name} to ${t.name}.`,
+    );
+  };
+
+  const setParam = (key: string, value: number) => {
+    if (!group || resolveParams(group.type, group)[key] === value) return;
+    const params = { ...group.params, [key]: value },
+      bad = checkParams(group.type, params);
+    if (bad) return say(bad);
+    editArtwork(
+      (a) => ({ ...a, groups: a.groups.map((g) => (g.id === group.id ? { ...g, params } : g)) }),
+      `${group.name}: ${recipes[group.type].params[key].label} set to ${value} mm.`,
     );
   };
 
@@ -138,6 +151,32 @@ export function Inspector() {
       >
         Apply construction
       </button>
+      {el && group && !el.override && Object.keys(recipes[el.type].params).length > 0 && (
+        <div className="recipe">
+          <div className="sectionlabel">
+            {group.name.toUpperCase()} · {recipes[el.type].name.toUpperCase()} / mm
+          </div>
+          <div className="pair">
+            {Object.entries(recipes[el.type].params).map(([key, p]) => (
+              <label key={key + k + JSON.stringify(group.params)}>
+                {p.label}
+                <input
+                  type="number"
+                  min={p.min}
+                  max={p.max}
+                  step={p.step}
+                  defaultValue={resolveParams(el.type, group)[key]}
+                  onBlur={(e) => setParam(key, +e.target.value)}
+                  onKeyDown={blurOnEnter}
+                />
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+      {el?.override && (
+        <p className="muted">This element overrides its group and uses {recipes[el.type].name} defaults.</p>
+      )}
       <button
         className="full"
         aria-pressed={view.isolate}
@@ -146,24 +185,11 @@ export function Inspector() {
         {view.isolate ? 'Exit isolate · show all' : 'Isolate selected element'}
       </button>
       <div className="callout">
-        {el ? (
+        {placed ? (
+          <ElementDetails e={placed} holes={holes(el!)} />
+        ) : el ? (
           <>
-            <b>{el.name}</b>
-            <br />
-            Approx. {Math.round((el.bounds[2] - el.bounds[0]) * scale * 1000)} ×{' '}
-            {Math.round((el.bounds[3] - el.bounds[1]) * scale * 1000)} mm
-            <br />
-            {el.regions.length} outer region(s) / {holes(el)} inner hole(s)
-            <br />
-            {(
-              el.regions.reduce(
-                (n, r) => n + perimeter(r.outer) + r.holes.reduce((m, h) => m + perimeter(h), 0),
-                0,
-              ) * scale
-            ).toFixed(3)}{' '}
-            m nominal contour perimeter
-            <br />
-            <small>Perimeter is not a compensated strip cut length.</small>
+            <b>{el.name}</b> is excluded from the sign.
           </>
         ) : (
           'Each artwork group (symbol, wordmark, tagline) shares one construction. Override single elements if needed.'
@@ -193,6 +219,50 @@ export function Inspector() {
         fixings and tolerances still need fabrication validation.
       </div>
     </aside>
+  );
+}
+
+// Size and the rear-to-front stack of one placed element, measured from the ACP face.
+function ElementDetails({ e, holes }: { e: ElementLayout; holes: number }) {
+  const base = e.parts[0]?.z0 ?? 0,
+    mm = (n: number) => +n.toFixed(2);
+  return (
+    <>
+      <b>{e.name}</b>
+      <br />
+      {Math.round(e.bounds[2] - e.bounds[0])} × {Math.round(e.bounds[3] - e.bounds[1])} mm ·{' '}
+      {e.regions.length} region(s) / {holes} hole(s)
+      <br />
+      {(e.perimeter / 1000).toFixed(3)} m contour perimeter
+      <table className="stack">
+        <tbody>
+          {e.parts
+            .filter((p) => p.kind !== 'leds')
+            .map((p) => (
+              <tr key={p.kind}>
+                <td>
+                  {p.material || p.kind}
+                  <small>
+                    {mm(p.z0 - base)}–{mm(p.z1 - base)} mm from fascia
+                  </small>
+                </td>
+                <td>{mm(p.z1 - p.z0)} mm</td>
+              </tr>
+            ))}
+          <tr>
+            <td>
+              <b>Projection</b>
+            </td>
+            <td>
+              <b>{mm(Math.max(...e.parts.map((p) => p.z1)) - base)} mm</b>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      {e.leds.length > 0 && <small>{e.leds.length} symbolic LED positions. </small>}
+      {e.standoffs.length > 0 && <small>{e.standoffs.length} standoffs. </small>}
+      <small>Perimeter is not a compensated strip cut length.</small>
+    </>
   );
 }
 

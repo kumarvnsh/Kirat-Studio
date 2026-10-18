@@ -31,7 +31,13 @@ export type ArtworkElement = {
   regions: Region[];
 };
 
-export type ArtworkGroup = { id: string; name: string; type: ConstructionType };
+// params: overrides of the recipe defaults for this group's construction (see recipes.ts).
+export type ArtworkGroup = {
+  id: string;
+  name: string;
+  type: ConstructionType;
+  params?: Record<string, number>;
+};
 
 export type Artwork = {
   elements: ArtworkElement[];
@@ -52,10 +58,7 @@ export const numericSettings = {
   gi: { label: 'GI thickness', min: 0.4, max: 3, step: 0.1, value: 0.8 },
   frame: { label: 'Frame section', min: 20, max: 100, step: 1, value: 40 },
   framewall: { label: 'Frame wall', min: 1, max: 5, step: 0.5, value: 2 },
-  depth: { label: 'Return depth', min: 20, max: 200, step: 1, value: 60 },
-  gauge: { label: 'Return gauge', min: 0.4, max: 2, step: 0.1, value: 0.6 },
-  face: { label: 'Acrylic face', min: 1, max: 20, step: 0.5, value: 3 },
-  back: { label: 'Letter back', min: 1, max: 10, step: 0.5, value: 3 },
+  backing: { label: 'Front backing sheet (0 = none)', min: 0, max: 6, step: 0.5, value: 0 },
 } as const;
 export type NumericKey = keyof typeof numericSettings;
 
@@ -86,7 +89,60 @@ export type ViewState = {
 // Reserved for seams, bend calibration, tool settings and allowances (Milestone E).
 export type FabricationState = Record<string, never>;
 
-export const LAYER_COUNT = 7;
+// Assembly layers, rear to front. Index = assembly step - 1.
+export const LAYERS = [
+  { id: 'gi', name: 'GI rear cover', kind: 'board', note: 'GI sheet closes the rear of the steel frame.' },
+  {
+    id: 'frame',
+    name: 'MS frame',
+    kind: 'board',
+    note: 'Hollow steel sections: perimeter plus vertical members. Sections need project engineering.',
+  },
+  {
+    id: 'backing',
+    name: 'Front backing sheet',
+    kind: 'board',
+    note: 'Optional sheet between frame and ACP. Set its thickness to 0 to omit it.',
+  },
+  {
+    id: 'acp',
+    name: 'ACP fascia',
+    kind: 'board',
+    note: 'ACP panel in front of the frame. Seams and fixing pattern are not detailed yet.',
+  },
+  {
+    id: 'mounting',
+    name: 'Letter mounting',
+    kind: 'letter',
+    note: 'Spacers / studs for letters with a standoff. Positions are an even spread, not an engineered pattern.',
+  },
+  {
+    id: 'backs',
+    name: 'Letter backs',
+    kind: 'letter',
+    note: 'Cut letter backs follow the approved outlines, including counters.',
+  },
+  {
+    id: 'returns',
+    name: 'Return walls',
+    kind: 'letter',
+    note: 'Returns follow outer and inner contours at the recipe depth and gauge; no joining compensation.',
+  },
+  {
+    id: 'leds',
+    name: 'LED modules',
+    kind: 'letter',
+    note: 'Symbolic module grid — not a manufacturer layout or electrical calculation.',
+  },
+  {
+    id: 'faces',
+    name: 'Faces / graphics',
+    kind: 'letter',
+    note: 'Faces, flat letters and films. Illumination is a visual approximation.',
+  },
+] as const;
+export type LayerId = (typeof LAYERS)[number]['id'];
+export const LAYER_COUNT = LAYERS.length;
 
 export function defaultSettings(): DesignSettings {
   const s = Object.fromEntries(Object.entries(numericSettings).map(([k, v]) => [k, v.value])) as Record<
@@ -122,17 +178,4 @@ export function checkSettings(s: DesignSettings): string | null {
   }
   if (s.framewall * 2 >= s.frame) return 'Frame wall must be less than half the frame section.';
   return null;
-}
-
-// Flat object for SignScene.build(): the one place design + view meet the renderer.
-export function sceneInput(design: DesignState, view: ViewState) {
-  const a = design.artwork;
-  return {
-    ...design.settings,
-    ...view,
-    components: a?.elements ?? [],
-    artBounds: a?.bounds,
-    imageWidth: a?.imageWidth ?? 1,
-    imageHeight: a?.imageHeight ?? 1,
-  };
 }

@@ -15,17 +15,14 @@ export type AppState = {
   view: ViewState;
   fabrication: FabricationState;
   trace: TraceOptions; // import settings for the next retrace (saved with the project, not undone)
-  stats: SceneStats | null; // derived by the renderer after each build
   message: string;
 };
-export type SceneStats = { returnLength: number; ledcount: number; scale: number };
 
 let state: AppState = {
   design: historyOf<DesignState>({ settings: defaultSettings(), artwork: null }),
   view: defaultView(),
   fabrication: {},
   trace: defaultTrace(),
-  stats: null,
   message: 'Start with the Kirat sample or upload your logo.',
 };
 const listeners = new Set<() => void>();
@@ -49,7 +46,6 @@ export const useView = () => useApp((s) => s.view);
 export const say = (message: string) => set({ ...state, message });
 export const setTrace = (patch: Partial<TraceOptions>) =>
   set({ ...state, trace: { ...state.trace, ...patch } });
-export const setStats = (stats: SceneStats | null) => set({ ...state, stats });
 
 // Design edits go through history. View changes never touch the design.
 export function editDesign(fn: (d: DesignState) => DesignState, message?: string) {

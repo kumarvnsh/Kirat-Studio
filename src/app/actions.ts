@@ -4,7 +4,7 @@ import { constructionNames, type ConstructionType, type ViewMode } from '../doma
 import { AUTOSAVE, BACKUP, parseProject, readStore, serialise, writeStore } from '../storage/project.ts';
 import { applyGroupType } from '../artwork/grouping.js';
 import { editDesign, getState, loadDesign, say, setTrace, setView, subscribe } from './store.ts';
-import type { SignScene } from '../scene/scene.js';
+import type { SignScene } from '../scene/scene.ts';
 
 // The renderer, set by <Viewport>. Null when WebGL is unavailable.
 export const viewer: { current: SignScene | null } = { current: null };

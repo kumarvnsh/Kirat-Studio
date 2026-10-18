@@ -99,3 +99,11 @@ test('applyGroupType keeps per-element overrides', () => {
   assert.equal(components[0].type, 'acrylic');
   assert.equal(components[1].type, 'metal');
 });
+
+test('applyGroupType resets recipe params when the construction changes', () => {
+  const groups = [{ id: 'g1', name: 'Wordmark', type: 'front', params: { depth: 90 } }];
+  applyGroupType(groups, [], 'g1', 'front');
+  assert.deepEqual(groups[0].params, { depth: 90 });
+  applyGroupType(groups, [], 'g1', 'halo');
+  assert.equal(groups[0].params, undefined);
+});

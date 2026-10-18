@@ -95,6 +95,8 @@ export function autoGroup(components) {
 export function applyGroupType(groups, components, groupId, type) {
   const g = groups.find((g) => g.id === groupId);
   if (!g) return;
+  // Recipe params belong to the old construction; a new construction starts from its defaults.
+  if (g.type !== type) delete g.params;
   g.type = type;
   for (const c of components) if (c.group === groupId && !c.override) c.type = type;
 }

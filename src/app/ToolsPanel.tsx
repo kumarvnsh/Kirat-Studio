@@ -2,24 +2,16 @@ import { useEffect, useState } from 'react';
 import {
   checkSettings,
   LAYER_COUNT,
+  LAYERS,
   numericSettings,
   type DesignSettings,
   type NumericKey,
 } from '../domain/project.ts';
 import { textArtworkURL, uploadURL } from '../artwork/import.ts';
-import { layerNames } from '../scene/scene.js';
+import { boardStack } from '../domain/layout.ts';
+import { bom } from '../domain/bom.ts';
 import { hasBackup, importImage, restoreBackup, retrace, setMode } from './actions.ts';
 import { editDesign, say, setTrace, setView, showAll, useApp, useDesign, useView } from './store.ts';
-
-const stepDescriptions = [
-  'GI panels close the rear of the steel frame. The 0.8 mm starting thickness is an editable assumption.',
-  'Hollow steel profiles form the support. Section and wall thickness need project engineering.',
-  'The ACP fascia sits in front of the frame. Panel seams and fixings are not detailed in this prototype.',
-  'Individual letter backs follow the reviewed outlines, including counters.',
-  'Outer and inner return walls use nominal depth and gauge; no profile-lock or joining compensation.',
-  'LED bodies are symbolic positions—not a manufacturer layout or electrical calculation.',
-  'Faces and graphics complete the sign. Day/night illumination is a visual approximation.',
-];
 
 export function ToolsPanel() {
   const [tab, setTab] = useState<'art' | 'board' | 'build'>('art');
@@ -222,9 +214,9 @@ function BoardPanel() {
           onChange={(e) => set('artscale', +e.target.value)}
         />
       </label>
-      <div className="pair">
-        {(['acp', 'gi', 'frame', 'framewall', 'depth', 'gauge', 'face', 'back'] as const).map(num)}
-      </div>
+      <div className="pair">{(['acp', 'gi', 'frame', 'framewall'] as const).map(num)}</div>
+      {num('backing')}
+      <StackTable settings={draft} />
       <label>
         ACP finish
         <input type="color" value={draft.boardcolor} onChange={(e) => set('boardcolor', e.target.value)} />
@@ -241,8 +233,9 @@ function BoardPanel() {
         Update geometry
       </button>
       <div className="callout">
-        Frame section, GI gauge and other starting values are editable assumptions. Dimensions are nominal;
-        this prototype does not engineer structure, face retention, bend allowance or electrical loading.
+        Board layers only. Letter depths, gauges and standoffs belong to each artwork group's construction —
+        edit them in the inspector. Dimensions are nominal; structure, face retention, bend allowance and
+        electrical loading are not engineered here.
       </div>
     </section>
   );
@@ -319,10 +312,12 @@ function BuildPanel() {
           onChange={(e) => setView({ explode: +e.target.value })}
         />
       </label>
-      <div className="callout">{stepDescriptions[view.step - 1]}</div>
+      <div className="callout">
+        <b>{LAYERS[view.step - 1].name}.</b> {LAYERS[view.step - 1].note}
+      </div>
       <div className="sectionlabel">LAYERS</div>
       <div id="layertoggles">
-        {layerNames.map((n: string, i: number) => (
+        {LAYERS.map(({ name: n }, i) => (
           <label key={n}>
             <input
               type="checkbox"
@@ -344,10 +339,64 @@ function BuildPanel() {
       >
         Show complete assembly
       </button>
-      <p className="muted">
-        GI rear cover → steel frame → ACP → letter backs → returns → symbolic LEDs → faces. This is an
-        explanatory sequence, not an approved workshop procedure.
-      </p>
+      <p className="muted">Rear to front. An explanatory sequence, not an approved workshop procedure.</p>
+      <PartsList />
     </section>
+  );
+}
+
+// Board layers with z positions; z = 0 is the centre of the steel frame.
+function StackTable({ settings }: { settings: DesignSettings }) {
+  const { layers, front } = boardStack(settings);
+  return (
+    <table className="stack">
+      <tbody>
+        {layers.map((l) => (
+          <tr key={l.layer}>
+            <td>{l.name}</td>
+            <td>{+(l.z1 - l.z0).toFixed(2)} mm</td>
+          </tr>
+        ))}
+        <tr>
+          <td>
+            <b>Board depth</b>
+          </td>
+          <td>
+            <b>{+(front - layers[0].z0).toFixed(2)} mm</b>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  );
+}
+
+function PartsList() {
+  const design = useDesign();
+  const rows = bom(design);
+  const fmt = (q: number, unit: string) => (unit === 'pcs' ? q : q.toFixed(2)) + ' ' + unit;
+  return (
+    <>
+      <div className="sectionlabel">PARTS (PRELIMINARY)</div>
+      <table className="stack parts">
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={i} title={r.material + ' · ' + r.note}>
+              <td>
+                {r.item}
+                <small>{r.material}</small>
+              </td>
+              <td>
+                {r.estimate ? '≈ ' : ''}
+                {fmt(r.qty, r.unit)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="muted">
+        Nominal quantities: no waste, seams, joining allowances or nesting. ≈ marks placeholder rules (LED
+        grid, fixings, returns without allowance).
+      </p>
+    </>
   );
 }

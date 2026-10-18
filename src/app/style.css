@@ -1012,3 +1012,35 @@ header {
     padding: 7px 6px;
   }
 }
+/* Milestone C: stack and parts tables, recipe params */
+table.stack {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 10px;
+  margin: 8px 0 14px;
+}
+table.stack td {
+  padding: 5px 2px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+table.stack td:last-child {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+table.stack small {
+  display: block;
+  font-size: 8px;
+  color: #8b9993;
+}
+.recipe {
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 4px 10px;
+  margin: 12px 0;
+  background: #fff;
+}
+.recipe .pair label {
+  margin: 6px 0;
+}
