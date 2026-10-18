@@ -7,7 +7,7 @@ import {
   unitToMm,
   type LengthUnit,
 } from '../domain/units.ts';
-import { numericDraft } from './numericDraft.ts';
+import { numericDraftCommit } from './numericDraft.ts';
 import { say, setView, useView } from './store.ts';
 
 export function UnitSelector({ compact = false }: { compact?: boolean }) {
@@ -61,6 +61,7 @@ export function ScrubInput({
   const errorId = useId();
   const detailsId = useId();
   const cancelled = useRef(false);
+  const dirty = useRef(false);
   const [error, setError] = useState<string | null>(null);
 
   const toDisp = (mm: number) => (isLength ? mmToUnit(mm, activeLengthUnit) : mm);
@@ -75,6 +76,7 @@ export function ScrubInput({
 
   useEffect(() => {
     if (!focused && !error) {
+      dirty.current = false;
       setText(String(toDisp(value)));
     }
   }, [value, activeLengthUnit, focused, error]);
@@ -94,6 +96,7 @@ export function ScrubInput({
     const startVal = value;
     const span = max - min;
     const pxPerStep = span > 1000 ? 0.25 : span > 150 ? 1.2 : 3;
+    dirty.current = false;
     setError(null);
     setScrubbing(true);
 
@@ -116,6 +119,7 @@ export function ScrubInput({
   };
 
   const handleInput = (raw: string) => {
+    dirty.current = true;
     setText(raw);
     setError(null);
   };
@@ -123,12 +127,13 @@ export function ScrubInput({
   const handleBlur = () => {
     setFocused(false);
     if (cancelled.current) { cancelled.current = false; return; }
-    const draft = numericDraft(text, min, max, toMm);
+    const draft = numericDraftCommit(text, value, dirty.current, min, max, toMm);
     if (!draft.ok) {
       setError(Number.isFinite(Number(text)) && text.trim() ? `Enter a value between ${dispMin} and ${dispMax} ${displayUnit}.` : draft.error);
       onInvalid?.(toMm(Number(text)));
       return;
     }
+    dirty.current = false;
     setError(null);
     setText(String(toDisp(draft.value)));
     if (draft.value !== value) onChange(draft.value, false);
@@ -138,6 +143,7 @@ export function ScrubInput({
     if (e.key === 'Enter') e.currentTarget.blur();
     if (e.key === 'Escape') {
       cancelled.current = true;
+      dirty.current = false;
       setError(null);
       setText(String(toDisp(value)));
       e.currentTarget.blur();

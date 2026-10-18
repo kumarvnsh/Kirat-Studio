@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { defaultSettings, defaultView, type Artwork, type DesignState } from '../src/domain/project.ts';
 import { selectionScope } from '../src/app/selection.ts';
-import { numericDraft } from '../src/app/numericDraft.ts';
+import { numericDraft, numericDraftCommit } from '../src/app/numericDraft.ts';
 import { resizeArtwork } from '../src/editor/resizeArtwork.ts';
 import { computeLayout } from '../src/domain/layout.ts';
 const art = (): Artwork => ({ groups:[{id:'g',name:'Letters',type:'front'}], elements:[10,20].map((w,i)=>({id:String(i), name:`Letter ${i}`,group:'g',type:'front',override:false,pixels:100,color:'#ffffff',bounds:[i*30,0,i*30+w,20],regions:[{outer:[[i*30,0],[i*30+w,0],[i*30+w,20],[i*30,20]],holes:[]}]})),bounds:[0,0,50,20],imageWidth:50,imageHeight:20,imageData:'',approved:false });
@@ -74,4 +74,15 @@ test('linked group resizing preserves exact proportions for non-round nominal di
  assert.equal(a.elements[0].charWidth,undefined);
  assert.ok(Math.abs(a.elements[1].charWidth!-731.123456789/2)<1e-10);
  assert.ok(Math.abs(a.groups[0].charWidth!-(inherited[2]-inherited[0])*2/2)<1e-10);
+});
+
+test('raw invalid drafts cannot be normalised to a valid zero by conversion',()=>{
+ for(const raw of ['bad','Infinity','-Infinity','NaN','']) assert.equal(numericDraft(raw,0,100,()=>0).ok,false);
+ assert.deepEqual(numericDraft('0',0,100,()=>0),{ok:true,value:0});
+});
+test('untouched formatted drafts keep exact source precision and dirty drafts commit',()=>{
+ assert.deepEqual(numericDraftCommit('3.94',100,false,5,4000,n=>n*25.4),{ok:true,value:100});
+ assert.deepEqual(numericDraftCommit('348.9',348.948612,false,5,4000),{ok:true,value:348.948612});
+ assert.deepEqual(numericDraftCommit('3.94',100,true,5,4000,n=>n*25.4),{ok:true,value:100.076});
+ assert.equal(numericDraftCommit('bad',100,true,0,4000,()=>0).ok,false);
 });
