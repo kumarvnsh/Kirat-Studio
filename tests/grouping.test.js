@@ -107,3 +107,104 @@ test('applyGroupType resets recipe params when the construction changes', () => 
   applyGroupType(groups, [], 'g1', 'halo');
   assert.equal(groups[0].params, undefined);
 });
+
+// Realistic logo layout (pixels, y down): tall symbol on the left spanning both text lines,
+// mixed-case wordmark "Kirat Creations" with i-dots, tagline in small caps directly underneath
+// with bullets and a full stop.
+function kiratLike() {
+  const comps = [box('symbol', 50, 60, 290, 460)];
+  // Wordmark: caps 120 tall (y 170–290), x-height letters 85 tall (y 205–290), word gap 45.
+  const word = ['K', 'i', 'r', 'a', 't', null, 'C', 'r', 'e', 'a', 't', 'i', 'o', 'n', 's'];
+  let x = 320;
+  word.forEach((ch, i) => {
+    if (!ch) return void (x += 45);
+    const cap = ch === 'K' || ch === 'C' || ch === 't';
+    const w = ch === 'i' ? 22 : 70;
+    comps.push(box('w' + i, x, cap ? 170 : 205, x + w, 290));
+    if (ch === 'i') comps.push(box('dot' + i, x, 172, x + 22, 194)); // tittle above the stem
+    x += w + 8;
+  });
+  // Tagline: caps 33 tall at y 342–375, starting under the wordmark; bullets mid-height; final full stop.
+  x = 330;
+  'SIGNAGE•BRANDING•INTERIORS.'.split('').forEach((ch, i) => {
+    if (ch === '•') comps.push(box('bullet' + i, x + 8, 352, x + 20, 364)), (x += 34);
+    else if (ch === '.') comps.push(box('stop' + i, x, 367, x + 8, 375)), (x += 14);
+    else comps.push(box('t' + i, x, 342, x + 26, 375)), (x += 32);
+  });
+  return comps;
+}
+
+test('logo layout: symbol, wordmark and tagline are three separate groups', () => {
+  const { components, groups } = autoGroup(attachDetails(kiratLike()));
+  const groupOf = (id) => groups.find((g) => g.id === components.find((c) => c.id === id).group).name;
+  assert.equal(groups.length, 3, groups.map((g) => g.name).join(', '));
+  assert.equal(groupOf('symbol'), 'Symbol');
+  assert.equal(groupOf('w0'), 'Main wordmark');
+  assert.equal(groupOf('w14'), 'Main wordmark');
+  assert.equal(groupOf('t0'), 'Tagline');
+  assert.equal(groupOf('bullet7'), 'Tagline', 'bullets join the tagline');
+  assert.equal(groupOf('stop26'), 'Tagline', 'the full stop joins the tagline');
+  assert.equal(groups.find((g) => g.name === 'Tagline').type, 'vinyl');
+  assert.equal(groups.find((g) => g.name === 'Main wordmark').type, 'front');
+});
+
+test('logo layout: i-dots attach to their stems, tagline letters under the wordmark do not', () => {
+  const comps = attachDetails(kiratLike());
+  assert.ok(!comps.some((c) => c.id.startsWith('dot')), 'tittles merged');
+  assert.equal(comps.find((c) => c.id === 'w1').regions.length, 2, 'i = stem + dot');
+  assert.equal(comps.filter((c) => c.id.startsWith('t')).length, 24, 'every tagline letter survives');
+  assert.ok(
+    comps.filter((c) => c.id.startsWith('w') && c.regions.length > 1).every((c) => /^w(1|11)$/.test(c.id)),
+  );
+});
+
+test('two-line wordmark of the same size stays one group', () => {
+  const line = (y, n, prefix) =>
+    Array.from({ length: n }, (_, i) => box(prefix + i, 100 + i * 80, y, 170 + i * 80, y + 100));
+  const { groups } = autoGroup([...line(0, 5, 'a'), ...line(130, 8, 'b')]);
+  assert.equal(groups.length, 1);
+  assert.equal(groups[0].name, 'Main wordmark');
+});
+
+test('an icon close to the text but much taller stays separate', () => {
+  const { groups } = autoGroup([
+    box('icon', 0, 0, 200, 260),
+    ...Array.from({ length: 4 }, (_, i) => box('l' + i, 230 + i * 70, 80, 290 + i * 70, 180)),
+  ]);
+  assert.deepEqual(groups.map((g) => g.name).sort(), ['Main wordmark', 'Symbol']);
+});
+
+test('a differently coloured icon next to the lettering is its own group; multicolour letters still merge', () => {
+  const c = (b, color) => ({ ...b, color });
+  const { groups } = autoGroup([
+    c(box('icon', 0, 60, 160, 230), '#11bb66'),
+    ...Array.from({ length: 5 }, (_, i) => c(box('l' + i, 200 + i * 70, 120, 260 + i * 70, 230), '#222222')),
+  ]);
+  assert.deepEqual(groups.map((g) => g.name).sort(), ['Main wordmark', 'Symbol']);
+  const rainbow = ['#ff0000', '#00aa00', '#0000ff', '#ffaa00'].map((col, i) =>
+    c(box('r' + i, i * 70, 0, 60 + i * 70, 100), col),
+  );
+  assert.equal(autoGroup(rainbow).groups.length, 1);
+});
+
+test('a lowercase tagline with ascenders, descenders and separators stays one group', () => {
+  // words: x-height 20 with some 28-tall ascender/descender letters, separated by 30 px gaps.
+  const word = (x0, hs, p) =>
+    hs.map((h, i) =>
+      box(
+        p + i,
+        x0 + i * 16,
+        h === 'd' ? 400 : h === 'a' ? 392 : 400,
+        x0 + i * 16 + 13,
+        h === 'd' ? 428 : 420,
+      ),
+    );
+  const comps = [
+    ...Array.from({ length: 6 }, (_, i) => box('W' + i, 100 + i * 90, 200, 180 + i * 90, 320)),
+    ...word(100, ['x', 'x', 'd', 'x', 'x', 'd', 'x'], 's'),
+    ...word(242, ['a', 'x', 'x', 'x', 'a', 'x', 'x', 'd'], 'b'),
+    ...word(400, ['x', 'x', 'a', 'x', 'x', 'x', 'x', 'x', 'x'], 'i'),
+  ];
+  const { groups } = autoGroup(comps);
+  assert.deepEqual(groups.map((g) => g.name).sort(), ['Main wordmark', 'Tagline']);
+});

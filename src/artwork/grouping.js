@@ -5,21 +5,50 @@
 const height = (c) => c.bounds[3] - c.bounds[1];
 const median = (xs) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)];
 
-// Merge small shapes sitting directly above/below a larger shape into that shape.
+const width = (c) => c.bounds[2] - c.bounds[0];
+const vOverlap = (a, b) => Math.min(a.bounds[3], b.bounds[3]) - Math.max(a.bounds[1], b.bounds[1]);
+const hGap = (a, b) => Math.max(a.bounds[0], b.bounds[0]) - Math.min(a.bounds[2], b.bounds[2]); // < 0 = overlap
+const ratio = (a, b) => Math.max(a, b) / Math.max(1e-9, Math.min(a, b));
+
+const rgb = (hex) =>
+  /^#[0-9a-f]{6}$/i.test(hex || '') ? [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)) : null;
+// Clearly different fill colours (e.g. a green icon beside black lettering). Unknown colour = similar.
+function differentColour(a, b) {
+  const p = rgb(a.color),
+    q = rgb(b.color);
+  return !!p && !!q && Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]) > 110;
+}
+
+// Two shapes sit on the same text line: similar height and colour, overlapping vertically, close horizontally.
+function sameLine(a, b) {
+  const ha = height(a),
+    hb = height(b);
+  return (
+    ratio(ha, hb) <= 1.8 &&
+    vOverlap(a, b) >= 0.5 * Math.min(ha, hb) &&
+    hGap(a, b) <= Math.min(ha, hb) &&
+    !differentColour(a, b)
+  );
+}
+
+// Merge true detached details (i/j dots, accents) into the letter below them.
+// A dot sits above its letter, is small in both directions, and has no same-size neighbours on its
+// own line (shapes with those are letters of a smaller line, e.g. a tagline, not dots).
 // ponytail: geometric heuristic only; the 2D review is still where the user confirms it.
 export function attachDetails(components) {
   const merged = new Set(),
     out = components.map((c) => ({ ...c, regions: [...c.regions], bounds: [...c.bounds] }));
   const bySize = [...out].sort((a, b) => b.pixels - a.pixels);
   for (const d of [...bySize].reverse()) {
+    if (out.some((m) => m !== d && !merged.has(m) && sameLine(d, m))) continue;
     const cx = (d.bounds[0] + d.bounds[2]) / 2;
     let host = null,
       best = Infinity;
     for (const h of bySize) {
-      if (h === d || merged.has(h) || height(d) >= height(h) * 0.5) continue;
+      if (h === d || merged.has(h) || height(d) >= height(h) * 0.5 || width(d) > width(h) * 1.5) continue;
       if (cx < h.bounds[0] || cx > h.bounds[2]) continue;
-      const gap = Math.max(h.bounds[1] - d.bounds[3], d.bounds[1] - h.bounds[3]);
-      if (gap < height(h) * 0.6 && gap < best) {
+      const gap = h.bounds[1] - d.bounds[3]; // dot above the letter: positive gap
+      if (gap > -0.1 * height(h) && gap < height(h) * 0.6 && gap < best) {
         best = gap;
         host = h;
       }
@@ -38,38 +67,103 @@ export function attachDetails(components) {
   return out.filter((c) => !merged.has(c));
 }
 
-// Split into rows (vertical overlap), then split rows at wide horizontal gaps.
-// Groups much shorter than the tallest group default to vinyl (tagline), the rest front-lit.
+const band = (cl) => {
+  const y0 = Math.min(...cl.map((c) => c.bounds[1])),
+    y1 = Math.max(...cl.map((c) => c.bounds[3])),
+    x0 = Math.min(...cl.map((c) => c.bounds[0])),
+    x1 = Math.max(...cl.map((c) => c.bounds[2]));
+  return { x0, y0, x1, y1, h: median(cl.map(height)) };
+};
+
+// Group by text lines, not by rows: shapes link only to similar-height neighbours, so a tall symbol
+// can't pull the wordmark and tagline into one group. Then:
+//   - punctuation and bullets (short single shapes) join the line they sit inside;
+//   - same-height fragments merge: words of one line with wide spacing (e.g. "A • B • C"),
+//     and stacked lines of a two-line wordmark.
 export function autoGroup(components) {
-  const rows = [];
-  for (const c of [...components].sort((a, b) => a.bounds[1] - b.bounds[1])) {
-    const row = rows.find((r) => {
-      const overlap = Math.min(r.y1, c.bounds[3]) - Math.max(r.y0, c.bounds[1]);
-      return overlap >= 0.5 * Math.min(height(c), r.y1 - r.y0);
-    });
-    if (row) {
-      row.items.push(c);
-      row.y0 = Math.min(row.y0, c.bounds[1]);
-      row.y1 = Math.max(row.y1, c.bounds[3]);
-    } else rows.push({ y0: c.bounds[1], y1: c.bounds[3], items: [c] });
-  }
-  const clusters = [];
-  for (const row of rows) {
-    const items = row.items.sort((a, b) => a.bounds[0] - b.bounds[0]),
-      limit = 1.5 * median(items.map(height));
-    let cur = [items[0]],
-      right = items[0].bounds[2];
-    for (const c of items.slice(1)) {
-      if (c.bounds[0] - right > limit) {
-        clusters.push(cur);
-        cur = [];
-      }
-      cur.push(c);
-      right = Math.max(right, c.bounds[2]);
+  const n = components.length,
+    parent = [...Array(n).keys()];
+  const find = (i) => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+  for (let i = 0; i < n; i++)
+    for (let j = i + 1; j < n; j++) if (sameLine(components[i], components[j])) parent[find(i)] = find(j);
+  let clusters = [...new Set(components.map((_, i) => find(i)))].map((r) =>
+    components.filter((_, i) => find(i) === r),
+  );
+
+  for (const single of clusters.filter((cl) => cl.length === 1)) {
+    const c = single[0],
+      cy = (c.bounds[1] + c.bounds[3]) / 2;
+    const home = clusters
+      .filter((cl) => cl !== single && cl.length > 1)
+      .map((cl) => ({ cl, b: band(cl) }))
+      .filter(
+        ({ b }) =>
+          height(c) < 0.6 * b.h &&
+          cy >= b.y0 &&
+          cy <= b.y1 &&
+          c.bounds[0] <= b.x1 + b.h &&
+          c.bounds[2] >= b.x0 - b.h,
+      )
+      .sort((p, q) => Math.abs(cy - (p.b.y0 + p.b.y1) / 2) - Math.abs(cy - (q.b.y0 + q.b.y1) / 2))[0];
+    if (home) {
+      home.cl.push(c);
+      clusters = clusters.filter((cl) => cl !== single);
     }
-    clusters.push(cur);
   }
-  return groupClusters(components, clusters);
+
+  for (let merged = true; merged; ) {
+    merged = false;
+    outer: for (const a of clusters)
+      for (const b of clusters) {
+        if (a === b) continue;
+        const single = a.length < 2 || b.length < 2;
+        const A = band(a),
+          B = band(b),
+          vgap = Math.max(A.y0, B.y0) - Math.min(A.y1, B.y1);
+        // Words of one line can differ in median height (ascenders, descenders): looser match there.
+        // Single shapes (e.g. letters split off by colour) rejoin only at nearly the same height and
+        // letter spacing, so an icon beside the text stays its own group.
+        const stacked =
+            !single &&
+            ratio(A.h, B.h) <= 1.25 &&
+            vgap < Math.max(A.h, B.h) &&
+            Math.min(A.x1, B.x1) > Math.max(A.x0, B.x0),
+          sameBand =
+            ratio(A.h, B.h) <= (single ? 1.25 : 1.6) &&
+            Math.min(A.y1, B.y1) - Math.max(A.y0, B.y0) >= 0.5 * Math.min(A.y1 - A.y0, B.y1 - B.y0) &&
+            Math.max(A.x0, B.x0) - Math.min(A.x1, B.x1) <= (single ? 1 : 3) * Math.max(A.h, B.h);
+        if (stacked || sameBand) {
+          a.push(...b);
+          clusters = clusters.filter((cl) => cl !== b);
+          merged = true;
+          break outer;
+        }
+      }
+  }
+
+  clusters.sort((a, b) => band(a).y0 - band(b).y0 || band(a).x0 - band(b).x0);
+  return groupClusters(components, clusters, nameClusters(clusters));
+}
+
+// Main wordmark = the multi-shape line with the most area; much shorter lines are taglines;
+// big single shapes are symbols. Everything else stays "Group n".
+function nameClusters(clusters) {
+  const text = clusters.filter((cl) => cl.length > 1),
+    area = (cl) => cl.reduce((s, c) => s + c.pixels, 0),
+    main = [...text].sort((a, b) => area(b) - area(a))[0];
+  if (!main) return [];
+  const h = band(main).h,
+    counts = {};
+  const label = (base) => ((counts[base] = (counts[base] || 0) + 1) > 1 ? `${base} ${counts[base]}` : base);
+  return clusters.map((cl) =>
+    cl === main
+      ? 'Main wordmark'
+      : cl.length === 1 && height(cl[0]) >= 0.9 * h
+        ? label('Symbol')
+        : cl.length > 1 && band(cl).h < 0.5 * h
+          ? label('Tagline')
+          : '',
+  );
 }
 
 // Build groups from clusters of components (each component in exactly one cluster).
