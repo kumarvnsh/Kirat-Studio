@@ -57,3 +57,21 @@ test('group size rejection does not change inherited dimensions or overrides',()
  assert.throws(()=>resizeArtwork(d,{ids:['0','1'],groupId:'g'},'height',m.charHeight*1.01,true));
  assert.equal(JSON.stringify(d),before);
 });
+test('linked group resizing preserves exact proportions for non-round nominal dimensions and overrides',()=>{
+ const d=design();d.settings.width=3501;d.settings.height=1251;d.settings.artscale=83;
+ d.artwork!.bounds=[0,0,53,29];
+ d.artwork!.elements[1].charWidth=731.123456789;
+ const original=computeLayout(d);
+ const inherited=original.elements[0].bounds;
+ const exactHeight=(d.artwork!.elements[0].bounds[3]-d.artwork!.elements[0].bounds[1])*original.scale;
+ const a=resizeArtwork(d,{ids:['0','1'],groupId:'g'},'height',exactHeight/2,true);
+ const result=computeLayout({...d,artwork:a});
+ for(let i=0;i<2;i++) for(const axis of [0,1]) {
+   const before=original.elements[i].bounds,after=result.elements[i].bounds;
+   assert.ok(Math.abs((after[axis+2]-after[axis])/(before[axis+2]-before[axis])-0.5)<1e-12,`element ${i} axis ${axis} must scale exactly`);
+ }
+ assert.equal(a.elements[0].charHeight,undefined);
+ assert.equal(a.elements[0].charWidth,undefined);
+ assert.ok(Math.abs(a.elements[1].charWidth!-731.123456789/2)<1e-10);
+ assert.ok(Math.abs(a.groups[0].charWidth!-(inherited[2]-inherited[0])*2/2)<1e-10);
+});
