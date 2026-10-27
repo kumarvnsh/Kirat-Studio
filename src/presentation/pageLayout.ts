@@ -22,7 +22,7 @@ export function layoutBooklet(config:PresentationConfig,design:DesignState,measu
  const text=(items:PageItem[],value:string,x:number,y:number,size:number,width=273,color='#233c46')=>{const lines=wrapText(value,size,width,measure);for(const line of lines){items.push({kind:'text',text:line,x,y,size,color});y+=size*1.55;}return y;};
  const header=(id:string,title:string):{page:LayoutPage;y:number}=>{const page:LayoutPage={id,title,items:[]};pages.push(page);let y=12;
   if(config.include.branding){if(config.metadata.logoData)page.items.push({kind:'logo',data:config.metadata.logoData,x:248,y:10,w:37,h:14});else text(page.items,'KIRAT STUDIO',12,y,2.6);y+=9;}
-  if(config.include.projectInfo){y=text(page.items,config.metadata.project||'Sign proposal',12,y,5.8,config.metadata.logoData?230:273);if(config.metadata.client)y=text(page.items,config.metadata.client,12,y,3);}
+  if(config.include.projectInfo){y=text(page.items,config.metadata.project||'Sign proposal',12,y,5.8,config.metadata.logoData?230:273);if(config.metadata.client)y=text(page.items,config.metadata.client,12,y,3);if(config.metadata.revision)y=text(page.items,`Revision ${config.metadata.revision}`,12,y,2.5);}
   y=text(page.items,title,12,y+2,3.5);page.items.push({kind:'line',x:12,y:y+1,x2:285,y2:y+1});return{page,y:y+6};};
  const appendTextPages=(id:string,title:string,content:string[],first?:{page:LayoutPage;y:number})=>{
   let state=first??header(id,title),continued=0;
@@ -42,7 +42,7 @@ export function layoutBooklet(config:PresentationConfig,design:DesignState,measu
   }
   if(source.materials)appendTextPages(`${source.id}-materials`,`${source.caption||shot.name} · materials`,materials);
  }
- if(config.include.notes&&config.metadata.notes&&!config.pages.some(p=>p.included&&(p.kind==='summary'||p.kind==='cover')))appendTextPages('project-notes','Project notes',[config.metadata.notes]);
- pages.forEach((p,i)=>{p.items.push({kind:'line',x:12,y:195,x2:285,y2:195});text(p.items,'Concept visualisation · Lighting not calibrated · Not for fabrication',12,198,2.1);text(p.items,`${config.include.projectInfo?'Rev '+config.metadata.revision+' · ':''}${i+1} / ${pages.length}`,247,198,2.1,38);});
+ if(pages.length&&config.include.notes&&config.metadata.notes&&!config.pages.some(p=>p.included&&(p.kind==='summary'||p.kind==='cover')))appendTextPages('project-notes','Project notes',[config.metadata.notes]);
+ pages.forEach((p,i)=>{p.items.push({kind:'line',x:12,y:195,x2:285,y2:195});text(p.items,'Concept visualisation · Lighting not calibrated · Not for fabrication',12,198,2.1);text(p.items,`${i+1} / ${pages.length}`,270,198,2.1,15);});
  return pages;
 }

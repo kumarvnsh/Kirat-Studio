@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type PointerEvent } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState, type PointerEvent } from 'react';
 import { exportPresentation, exportView, openProject, saveProject, viewer } from './actions.ts';
 import {
   clearSelection,
@@ -22,13 +22,13 @@ import { Dialog } from './Dialog.tsx';
 import { UnitSelector } from './ScrubInput.tsx';
 import { AssemblyProvider, AssemblySteps, AssemblyDetails, AssemblyControls } from './AssemblyWorkspace.tsx';
 import { FabricationProvider, FabricationParts, FabricationPreview, FabricationSettings } from './FabricationWorkspace.tsx';
-import { PresentationPanel } from './PresentationPanel.tsx';
 import { useDesign } from './store.ts';
 import { formatDimsInUnit } from '../domain/units.ts';
 import type { ViewState } from '../domain/project.ts';
 import { Viewport } from './Viewport.tsx';
 import { Inspector } from './Inspector.tsx';
 import { HelpModal, TourOverlay } from './OnboardingTour.tsx';
+const PresentationWorkspace = lazy(() => import('./presentation/PresentationWorkspace.tsx').then(m => ({ default: m.PresentationWorkspace })));
 
 export function App() {
   const view = useView();
@@ -238,7 +238,7 @@ export function App() {
       {!view.presentation && rightOpen && <><div className="resizer" role="separator" aria-label="Resize properties panel" onPointerDown={startResize('right')} onDoubleClick={()=>setRightW(310)} /><aside className="studio-properties">
         <div hidden={taskMode!=='design'}><Inspector /></div><div hidden={taskMode!=='assembly'}><AssemblyDetails /></div><div hidden={taskMode!=='fabrication'}><FabricationSettings /></div>
       </aside></>}
-      {view.presentation && <PresentationPanel />}
+      {view.presentation && <Suspense fallback={<div role="status">Loading client presentation…</div>}><PresentationWorkspace /></Suspense>}
     </div></FabricationProvider></AssemblyProvider>
     {!view.presentation && <footer className="studio-status"><div className={'save-state '+saveStatus}><i />{saveStatus==='saving'?'Saving…':saveStatus==='error'?<button onClick={saveProject}>Save failed · Download a copy</button>:saveStatus==='saved'?'Saved in this browser':'Local project'}</div><span className="status-message" role="status">{message}</span><span className="board-size">{formatDimsInUnit(design.settings.width,design.settings.height,view.unit??'mm')}</span><UnitSelector compact /></footer>}
     {showImport && <Dialog title="Artwork & outline review" onClose={()=>setShowImport(false)}><ArtworkPanel onReview={()=>setShowImport(false)} /></Dialog>}

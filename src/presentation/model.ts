@@ -30,7 +30,7 @@ export function validatePresentation(raw: unknown): {value:PresentationConfig;wa
   for(const s of c.shots) {
    if(!s||!text(s.id,100)||!s.id||ids.has(s.id)||!text(s.name,200))throw Error();ids.add(s.id);
    if(!['studio','shopfront','facade','wall','interior'].includes(s.scene.kind)||!['plaster','concrete','brick'].includes(s.scene.wallFinish)||!['paving','concrete'].includes(s.scene.groundFinish))throw Error();
-   if(!(s.camera.preset in cameraNames)||!['day','dusk','night'].includes(s.environment)||typeof s.power!=='boolean'||![2400,3840].includes(s.width)||!finiteRange(s.aspect,.25,4)||!finiteRange(s.dimming,0,1)||!finiteRange(s.exposureEV,-4,4)||(s.pairId!==undefined&&!text(s.pairId,100)))throw Error();
+   if(!Object.hasOwn(cameraNames,s.camera.preset)||!['day','dusk','night'].includes(s.environment)||typeof s.power!=='boolean'||![2400,3840].includes(s.width)||!finiteRange(s.aspect,.25,4)||!finiteRange(s.dimming,0,1)||!finiteRange(s.exposureEV,-4,4)||(s.pairId!==undefined&&!text(s.pairId,100)))throw Error();
    if(s.camera.preset==='custom') {
     const {position:p,target:t}=s.camera;
     if(!p||!t||p.length!==3||t.length!==3||![...p,...t].every(v=>finiteRange(v,-10000,10000))||p.every((v,i)=>v===t[i]))throw Error();
