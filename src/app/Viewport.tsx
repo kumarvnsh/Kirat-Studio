@@ -58,6 +58,8 @@ export function Viewport({
         else if (add) toggleSelect(id);
         else select(id);
       }, message => say(message));
+      const scene = viewer.current;
+      return () => { scene.dispose(); if (viewer.current === scene) viewer.current = null; };
     } catch (e) {
       console.error(e);
       setNo3d(true);

@@ -195,8 +195,11 @@ export class SignScene {
   lightUpdaters: ((s: SceneInput) => void)[] = [];
   lastSize: [number, number] = [0, 0];
   dirty = true;
+  private animationFrame = 0;
+  private resizeObserver: ResizeObserver | null = null;
+  private disposed = false;
 
-  constructor(host: HTMLElement, onSelect: (id: string | null, add: boolean, doubleClick?: boolean) => void, onSceneError = (_message: string) => {}) {
+  constructor(host: HTMLElement, onSelect: (id: string | null, add: boolean, doubleClick?: boolean) => void, onSceneError = (_message: string) => {}, options: { offscreen?: boolean } = {}) {
     this.host = host;
     this.onSelect = onSelect;
     this.onSceneError = onSceneError;
@@ -225,7 +228,9 @@ export class SignScene {
     this.scene.add(this.fill);
     const env = new RoomEnvironment(),
       pmrem = new T.PMREMGenerator(this.renderer);
-    this.scene.environment = pmrem.fromScene(env, 0.04).texture;
+    const environmentTarget = pmrem.fromScene(env, 0.04);
+    this.scene.environment = environmentTarget.texture;
+    this.environmentTarget = environmentTarget;
     env.dispose();
     pmrem.dispose();
     // HDR pipeline. Bloom only picks up radiance above BLOOM_THRESHOLD, i.e. emissive parts.
@@ -296,10 +301,13 @@ export class SignScene {
         this.fit('perspective');
       }
     });
-    new ResizeObserver(() => this.resize()).observe(host);
+    if (options.offscreen) return;
+    this.resizeObserver = new ResizeObserver(() => this.resize());
+    this.resizeObserver.observe(host);
     this.resize(true);
     const loop = () => {
-      requestAnimationFrame(loop);
+      if (this.disposed) return;
+      this.animationFrame = requestAnimationFrame(loop);
       const moved = this.controls.update();
       if (moved || this.dirty) {
         this.dirty = false;
@@ -307,6 +315,23 @@ export class SignScene {
       }
     };
     loop();
+  }
+
+  private environmentTarget: T.WebGLRenderTarget | null = null;
+  dispose() {
+    if (this.disposed) return;
+    this.disposed = true;
+    cancelAnimationFrame(this.animationFrame);
+    this.resizeObserver?.disconnect();
+    this.controls.dispose();
+    this.clear();
+    if (this.scenery) disposeScenery(this.scenery);
+    this.environmentTarget?.dispose();
+    this.sun.dispose(); this.fill.dispose(); this.hemi.dispose();
+    this.composer.dispose();
+    this.renderer.dispose();
+    this.renderer.forceContextLoss();
+    this.renderer.domElement.remove();
   }
 
   resize(force = false) {
