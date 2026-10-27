@@ -10,13 +10,18 @@ export type Scenery = {
 
 function disposeGroup(group: T.Group) {
   group.removeFromParent();
+  const resources = new Set<{ dispose: () => void }>();
   group.traverse(child => {
-    if (child instanceof T.Light) child.dispose();
+    if (child instanceof T.Light) resources.add(child);
     if (!(child instanceof T.Mesh)) return;
-    child.geometry.dispose();
+    resources.add(child.geometry);
     const materials = Array.isArray(child.material) ? child.material : [child.material];
-    for (const material of materials) material.dispose();
+    for (const material of materials) {
+      resources.add(material);
+      for (const value of Object.values(material)) if (value instanceof T.Texture) resources.add(value);
+    }
   });
+  resources.forEach(resource => resource.dispose());
   group.clear();
 }
 

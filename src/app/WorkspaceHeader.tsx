@@ -1,5 +1,5 @@
 import { useRef, type ReactNode } from 'react';
-import { exportPresentation, exportView, hasBackup, openProject, restoreBackup, saveProject } from './actions.ts';
+import { exportView, hasBackup, openProject, restoreBackup, saveProject } from './actions.ts';
 import { exportCutFiles, exportBendSchedule } from './MakePanel.tsx';
 import { redo, say, undo, useApp, useDesign, useView } from './store.ts';
 

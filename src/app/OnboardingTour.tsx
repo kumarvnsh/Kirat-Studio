@@ -51,10 +51,10 @@ export const TOUR_STEPS: TourStep[] = [
     focus: 'left',
     eyebrow: 'STEP 4 OF 4 · FABRICATION & PRESENTATION',
     title: 'Check CNC toolpaths, bend strips & export sheets',
-    body: 'Open Fabrication to find a part, inspect its outline and tool paths, or review a return strip and bend schedule. Use Export for PNG, presentation sheet, DXF and CSV outputs.',
+    body: 'Open Fabrication to find a part, inspect its outline and tool paths, or review a return strip and bend schedule. Use Export for PNG, client booklet PDF/images, DXF and CSV outputs.',
     tips: [
       'Select a return strip, then choose Forming study to animate its element contours.',
-      'Choose Present for a clean client view, or Export → Day/night presentation sheet.',
+      'Choose Present or Export → Client booklet to prepare views, select pages and export PDF or images.',
     ],
   },
 ];

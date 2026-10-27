@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, type PointerEvent } from 'react';
-import { exportPresentation, exportView, openProject, saveProject, viewer } from './actions.ts';
+import { exportView, openProject, saveProject, viewer } from './actions.ts';
 import {
   clearSelection,
   getState,

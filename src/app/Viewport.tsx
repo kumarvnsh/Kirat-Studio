@@ -167,7 +167,7 @@ export function Viewport({
         ? `${formatDimsAllUnits(placedW, placedH)} · Depth ${formatAllUnits(placedD)}`
         : null;
 
-  return <main className="studio-canvas">
+  return <main className="studio-canvas" inert={view.presentation} aria-hidden={view.presentation || undefined}>
       <div className="viewportbar">
         <div className="viewbar-left">
           {onToggleLeft && !view.presentation && <button className="panel-toggle" aria-label="Toggle layers panel" onClick={onToggleLeft}>◧</button>}

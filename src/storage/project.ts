@@ -1,4 +1,4 @@
-// Project file format. v4 stores design and fabrication separately; view state is never saved.
+// Project file format. v5 adds presentation configuration separate from design and fabrication.
 // v3 had board-wide letter dimensions; v4 keeps them per group as recipe params.
 // v1/v2 (prototype) files store one flat `state` object. Older files are migrated on open.
 import {

@@ -30,7 +30,9 @@ Requires Node 20+.
 | `src/fabrication/` | Return-strip bend schedules (`bending.ts`), tool compensation and cut checks (`cutting.ts`), fabrication plan + CSV (`plan.ts`), DXF via maker.js (`dxf.ts`) |
 | `src/editor/history.ts` | Immutable undo/redo over designs |
 | `src/editor/artworkOps.ts` | Structure edits: rename, create / move / merge / delete / reorder groups, constructions and colours |
-| `src/storage/project.ts` | Project file format v4, v1–v3 migration, validation, browser autosave |
+| `src/storage/project.ts` | Project file format v5, v1–v4 migration, validation, browser autosave |
+| `src/presentation/` | Repeatable cameras, progressive final rendering, render queue, shared booklet layout, PDF and image exports |
+| `src/app/presentation/` | Prepare renders → Build booklet → Export client workspace |
 | `src/scene/scene.ts` | Three.js display of the layout (mm → m); HDR pipeline via pmndrs/postprocessing: exposure → bloom → AgX tone mapping; PBR finishes; stills |
 | `public/` | Static assets served at `/`: `kirat-logo.svg`, the Kirat Creations sample (Canva export) |
 | `tests/` | `node --test` checks (`.js` and `.ts`; Node 22 strips types natively) |
@@ -65,8 +67,11 @@ Milestone D (customer-ready visuals) done for presentation level:
 - Emission never depends on time of day. Daylight is modelled as much brighter than an LED face and the camera exposes for it, so lit faces read as lit-but-subtle by day and glow at night.
 - HDR rendering with pmndrs/postprocessing: exposure, then bloom with a luminance threshold above 1 (only emissive parts bloom: faces, halo light, LED lenses), then AgX tone mapping so saturated faces keep their colour.
 - PBR finishes: clear-coated ACP, zinc GI, primed MS frame, aluminium returns, stainless halo faces, glossy cast acrylic, matte vinyl.
-- Presentation sheet export: day and night stills at 2400 px framed from the current viewing direction, title block, construction per group, LED colour, disclaimer.
-- Not done: a *calibrated* preview compared against photographs of a real sample (needs measurements), path-traced stills.
+- Client booklet: choose installed/studio views, day/night/dusk, orthographic front/side/top and elevated/3D cameras; include, reorder or remove pages, branding, project details, dimensions, materials and notes.
+- Fast raster previews and a separate progressive path-traced final render (512 samples; 2400 or 3840 px). Final capture preserves physical layout, adds actual rear-light spill and uses independent environment illumination and sign power. Render progress, cancellation, retry and outdated-image status are explicit.
+- Export an A4 landscape vector PDF, composed PNG/JPG pages (3508 × 2480), or individual render images. Image batches download as ZIPs. Final exports require current final images; draft export is explicit and marked.
+- Presentation configuration is saved separately in project v5. Full images are cached in this browser, outside JSON; opening a project on another device requires rerendering. Cache errors retain in-memory results for export. PDF lettering is vector outlines to preserve Latin/Devanagari shaping consistently; it is not searchable text.
+- Not done: a *calibrated* preview compared against photographs of a real sample (needs measurements), site-photo placement or cloud render services. Built-in surroundings remain curated 3D scenes, not photographs.
 
 Milestone E (fabrication preview) done at geometric level:
 
