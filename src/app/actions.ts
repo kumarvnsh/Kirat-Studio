@@ -1,5 +1,5 @@
 // Operations that span panels: importing artwork, opening/saving projects, mode changes, export.
-import { loadImage, traceImage } from '../artwork/import.ts';
+import { loadImage, traceImage, type TraceOptions } from '../artwork/import.ts';
 import { svgArtwork } from '../artwork/svg.ts';
 import { LAYER_COUNT, type Artwork, type ViewMode } from '../domain/project.ts';
 import { ALL_STEPS } from '../domain/assembly.ts';
@@ -36,11 +36,18 @@ const reportError = (e: unknown) => say(e instanceof Error ? e.message : String(
 export async function importImage(url: string) {
   try {
     source = { image: await loadImage(url) };
-    setTrace({ crop: fullCrop, background: 'white', threshold: 45 });
+    setTrace({ crop: fullCrop, background: 'auto', threshold: 45 });
     retrace();
   } catch (e) {
     reportError(e);
   }
+}
+
+export const rasterSource = () => source && 'image' in source ? source.image : null;
+export async function applyRasterTrace(image: HTMLImageElement, options: TraceOptions, useBackground: boolean) {
+  source = { image };
+  setTrace(options);
+  await retrace(useBackground);
 }
 
 export function importSvg(text: string) {
@@ -49,7 +56,7 @@ export function importSvg(text: string) {
 }
 
 // Re-importing replaces the artwork as one undoable design edit.
-export async function retrace() {
+export async function retrace(useBackground = false) {
   if (!source) {
     const vector = getState().design.present.artwork?.origin === 'vector';
     return say(
@@ -59,7 +66,7 @@ export async function retrace() {
     );
   }
   try {
-    let artwork: Artwork, note: string;
+    let artwork: Artwork, note: string, fasciaColor: string | undefined;
     if ('svg' in source) {
       const r = await svgArtwork(source.svg);
       artwork = r.artwork;
@@ -74,13 +81,14 @@ export async function retrace() {
     } else {
       const r = traceImage(source.image, getState().trace);
       artwork = r.artwork;
+      if (useBackground && r.background.color) fasciaColor = r.background.color;
       note =
         (r.truncated ? 'Smallest shapes capped at 100. ' : '') +
         'Traced from pixels: review outlines. Elements are grouped by row and spacing; groups much smaller than the main lettering default to vinyl. ';
     }
     const holes = artwork.elements.reduce((n, e) => n + e.regions.reduce((m, r) => m + r.holes.length, 0), 0);
     editDesign(
-      (d) => ({ ...d, artwork }),
+      (d) => ({ ...d, artwork, ...(fasciaColor ? { settings: { ...d.settings, boardcolor: fasciaColor } } : {}) }),
       `${artwork.elements.length} shapes · ${holes} holes · ${artwork.groups.length} groups. ${note}Review groups in the inspector.`,
     );
     setView({
@@ -111,7 +119,7 @@ export function projectText() {
     design: s.design.present,
     fabrication: s.fabrication,
     presentation: s.presentation,
-    traceSettings: { background: t.background, threshold: t.threshold, minpixels: t.minpixels },
+    traceSettings: { background: t.background, backgroundColor: t.backgroundColor, threshold: t.threshold, minpixels: t.minpixels },
   });
 }
 

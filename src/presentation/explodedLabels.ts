@@ -2,14 +2,28 @@ import * as T from 'three';
 import { LAYERS, type LayerId } from '../domain/project.ts';
 import { loadBookletFont } from './bookletFont.ts';
 export type ExplodedLabel = { text: string; x: number; y: number };
-export function explodedLabels(layers: Map<LayerId, T.Group>, camera: T.Camera): ExplodedLabel[] {
+export function explodedLabels(
+  layers: Map<LayerId, T.Group>,
+  camera: T.Camera,
+  integrated = false,
+): ExplodedLabel[] {
   const result: ExplodedLabel[] = [];
   for (const layer of LAYERS) {
     const group = layers.get(layer.id);
     if (!group?.visible || !group.children.length) continue;
     const point = new T.Box3().setFromObject(group).getCenter(new T.Vector3()).project(camera);
     result.push({
-      text: layer.name + (layer.id === 'leds' || layer.id === 'power' ? ' (schematic)' : ''),
+      text:
+        (integrated
+          ? ((
+              {
+                acp: 'Routed ACP fascia',
+                backs: 'Acrylic retainers / backs',
+                faces: 'Acrylic inserts / graphics',
+                leds: 'Tray / letter LEDs',
+              } as Partial<Record<LayerId, string>>
+            )[layer.id] ?? layer.name)
+          : layer.name) + (layer.id === 'leds' || layer.id === 'power' ? ' (schematic)' : ''),
       x: (point.x + 1) / 2,
       y: (1 - point.y) / 2,
     });

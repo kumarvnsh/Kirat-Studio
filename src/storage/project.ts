@@ -1,3 +1,4 @@
+// v7 adds panel-integrated constructions and colour tracing.
 // v6 adds independent proposal options; v5 added presentation separate from design and fabrication.
 // v3 had board-wide letter dimensions; v4 keeps them per group as recipe params.
 // v1/v2 (prototype) files store one flat `state` object. Older files are migrated on open.
@@ -22,9 +23,9 @@ import {
 } from '../presentation/model.ts';
 
 export const FORMAT = 'kirat-signage-studio';
-export const VERSION = 6;
+export const VERSION = 7;
 
-export type TraceSettings = { background: string; threshold: number; minpixels: number };
+export type TraceSettings = { background: string; backgroundColor?: string; threshold: number; minpixels: number };
 export type ProjectFile = {
   design: DesignState;
   fabrication: FabricationState;
@@ -48,7 +49,7 @@ export function parseProject(text: string): ProjectFile {
   const raw = JSON.parse(text);
   if (raw?.format !== FORMAT) throw Error('Not a Kirat Studio project.');
   let design: DesignState;
-  if (raw.version === 4 || raw.version === 5 || raw.version === 6)
+  if (raw.version === 4 || raw.version === 5 || raw.version === 6 || raw.version === 7)
     design = raw.design && {
       ...raw.design,
       settings: { ...defaultSettings(), ...raw.design.settings },

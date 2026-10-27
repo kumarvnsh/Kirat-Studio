@@ -11,7 +11,9 @@ const hGap = (a, b) => Math.max(a.bounds[0], b.bounds[0]) - Math.min(a.bounds[2]
 const ratio = (a, b) => Math.max(a, b) / Math.max(1e-9, Math.min(a, b));
 
 const rgb = (hex) =>
-  /^#[0-9a-f]{6}$/i.test(hex || '') ? [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)) : null;
+  /^#[0-9a-f]{6}$/i.test(hex || '')
+    ? [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16))
+    : null;
 // Clearly different fill colours (e.g. a green icon beside black lettering). Unknown colour = similar.
 function differentColour(a, b) {
   const p = rgb(a.color),
@@ -45,7 +47,8 @@ export function attachDetails(components) {
     let host = null,
       best = Infinity;
     for (const h of bySize) {
-      if (h === d || merged.has(h) || height(d) >= height(h) * 0.5 || width(d) > width(h) * 1.5) continue;
+      if (h === d || merged.has(h) || height(d) >= height(h) * 0.5 || width(d) > width(h) * 1.5)
+        continue;
       if (cx < h.bounds[0] || cx > h.bounds[2]) continue;
       const gap = h.bounds[1] - d.bounds[3]; // dot above the letter: positive gap
       if (gap > -0.1 * height(h) && gap < height(h) * 0.6 && gap < best) {
@@ -85,7 +88,8 @@ export function autoGroup(components) {
     parent = [...Array(n).keys()];
   const find = (i) => (parent[i] === i ? i : (parent[i] = find(parent[i])));
   for (let i = 0; i < n; i++)
-    for (let j = i + 1; j < n; j++) if (sameLine(components[i], components[j])) parent[find(i)] = find(j);
+    for (let j = i + 1; j < n; j++)
+      if (sameLine(components[i], components[j])) parent[find(i)] = find(j);
   let clusters = [...new Set(components.map((_, i) => find(i)))].map((r) =>
     components.filter((_, i) => find(i) === r),
   );
@@ -104,7 +108,9 @@ export function autoGroup(components) {
           c.bounds[0] <= b.x1 + b.h &&
           c.bounds[2] >= b.x0 - b.h,
       )
-      .sort((p, q) => Math.abs(cy - (p.b.y0 + p.b.y1) / 2) - Math.abs(cy - (q.b.y0 + q.b.y1) / 2))[0];
+      .sort(
+        (p, q) => Math.abs(cy - (p.b.y0 + p.b.y1) / 2) - Math.abs(cy - (q.b.y0 + q.b.y1) / 2),
+      )[0];
     if (home) {
       home.cl.push(c);
       clusters = clusters.filter((cl) => cl !== single);
@@ -144,7 +150,8 @@ export function autoGroup(components) {
 
   // 2. Text lines are rows of 3+ shapes sitting side by side; everything else is graphic (symbol
   //    pieces, icons). Letters rarely overlap horizontally; pieces of a mark are stacked over each other.
-  const stacked = (c, cl) => cl.some((d) => d !== c && -hGap(c, d) >= 0.5 * Math.min(width(c), width(d)));
+  const stacked = (c, cl) =>
+    cl.some((d) => d !== c && -hGap(c, d) >= 0.5 * Math.min(width(c), width(d)));
   const isText = (cl) => {
     const b = band(cl);
     return (
@@ -163,7 +170,9 @@ export function autoGroup(components) {
       B = band(b),
       vgap = Math.max(A.y0, B.y0) - Math.min(A.y1, B.y1);
     return (
-      ratio(A.h, B.h) <= 1.25 && vgap < Math.max(A.h, B.h) && Math.min(A.x1, B.x1) > Math.max(A.x0, B.x0)
+      ratio(A.h, B.h) <= 1.25 &&
+      vgap < Math.max(A.h, B.h) &&
+      Math.min(A.x1, B.x1) > Math.max(A.x0, B.x0)
     );
   });
 
@@ -179,7 +188,9 @@ export function autoGroup(components) {
     return dist < 0.5 * Math.min(A.y1 - A.y0, B.y1 - B.y0);
   });
 
-  clusters = [...text, ...graphic].sort((a, b) => band(a).y0 - band(b).y0 || band(a).x0 - band(b).x0);
+  clusters = [...text, ...graphic].sort(
+    (a, b) => band(a).y0 - band(b).y0 || band(a).x0 - band(b).x0,
+  );
   const { names, types } = nameClusters(clusters, new Set(text));
   return groupClusters(components, clusters, names, types);
 }
@@ -192,7 +203,8 @@ function nameClusters(clusters, text) {
   if (!main) return { names: [], types: undefined };
   const h = band(main).h,
     counts = {};
-  const label = (base) => ((counts[base] = (counts[base] || 0) + 1) > 1 ? `${base} ${counts[base]}` : base);
+  const label = (base) =>
+    (counts[base] = (counts[base] || 0) + 1) > 1 ? `${base} ${counts[base]}` : base;
   const names = clusters.map((cl) => {
     const b = band(cl);
     if (cl === main) return 'Main wordmark';
@@ -234,4 +246,37 @@ export function applyGroupType(groups, components, groupId, type) {
   if (g.type !== type) delete g.params;
   g.type = type;
   for (const c of components) if (c.group === groupId && !c.override) c.type = type;
+}
+
+// Separate only strongly contrasting artwork colours within a spatial group. Anti-alias shades
+// stay together, while a white wordmark and a gold backing strip become independently editable.
+export function splitColourGroups(groups, components) {
+  const out = [],
+    assignment = new Map();
+  const rgb = (hex) => [1, 3, 5].map((i) => parseInt((hex ?? '#000000').slice(i, i + 2), 16));
+  for (const group of groups) {
+    const buckets = [];
+    for (const e of components.filter((e) => e.group === group.id)) {
+      const c = rgb(e.color);
+      let bucket = buckets.find((b) => Math.max(...c.map((v, i) => Math.abs(v - b.rgb[i]))) < 80);
+      if (!bucket) {
+        bucket = { rgb: c, color: e.color, elements: [] };
+        buckets.push(bucket);
+      }
+      bucket.elements.push(e);
+    }
+    for (const [i, b] of buckets.entries()) {
+      const id = buckets.length === 1 ? group.id : `${group.id}-c${i + 1}`;
+      out.push({
+        ...group,
+        id,
+        name: buckets.length === 1 ? group.name : `${group.name} · ${b.color}`,
+      });
+      for (const e of b.elements) assignment.set(e.id, id);
+    }
+  }
+  return {
+    groups: out,
+    components: components.map((e) => ({ ...e, group: assignment.get(e.id) ?? e.group })),
+  };
 }

@@ -1,3 +1,4 @@
+import { panelIntegrated } from './recipes.ts';
 // Preliminary bill of materials from the layout. Nominal quantities: no waste, seams, joining
 // allowances or nesting. Rows marked `estimate` depend on placeholder rules (LED grid, fixings).
 import { area } from '../artwork/contours.js';
@@ -58,13 +59,26 @@ export function bom(design: DesignState): BomRow[] {
       );
     for (const p of e.parts) {
       const key = `${e.group}|${p.kind}|${p.material}`,
-        base = { layer: p.layer, item: `${gname} · ${label[p.kind]}`, material: p.material };
+        base = {
+          layer: p.layer,
+          item: `${gname} · ${panelIntegrated(e.type) && p.kind === 'back' ? 'Acrylic retainer' : label[p.kind]}`,
+          material: p.material,
+        };
       if (p.kind === 'stud')
-        addTo(key, { ...base, unit: 'pcs', note: 'one per fixing point', estimate: true }, e.fixings.length);
+        addTo(
+          key,
+          { ...base, unit: 'pcs', note: 'one per fixing point', estimate: true },
+          e.fixings.length,
+        );
       else if (p.kind === 'trim')
         addTo(
           key,
-          { ...base, unit: 'm', note: 'outer and inner contours, no joining allowance', estimate: true },
+          {
+            ...base,
+            unit: 'm',
+            note: 'outer and inner contours, no joining allowance',
+            estimate: true,
+          },
           e.perimeter / 1000,
         );
       else if (p.kind === 'standoff')
@@ -78,14 +92,29 @@ export function bom(design: DesignState): BomRow[] {
       else if (p.kind === 'returns')
         addTo(
           key,
-          { ...base, unit: 'm', note: `${e.params.depth} mm high, no joining allowance`, estimate: true },
+          {
+            ...base,
+            unit: 'm',
+            note: `${e.params.depth} mm high, no joining allowance`,
+            estimate: true,
+          },
           e.perimeter / 1000,
         );
       else
         addTo(
           key,
           { ...base, unit: 'm²', note: 'net outline area, no nesting', estimate: false },
-          m2(faceArea),
+          m2(
+            p.regions
+              ? p.regions.reduce(
+                  (n, r) =>
+                    n +
+                    Math.abs(area(r.outer)) -
+                    r.holes.reduce((n, h) => n + Math.abs(area(h)), 0),
+                  0,
+                )
+              : faceArea,
+          ),
         );
     }
   }

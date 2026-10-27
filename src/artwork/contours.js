@@ -1,3 +1,4 @@
+import { detectBackground } from './background.js';
 export function area(p) {
   let a = 0;
   for (let i = 0; i < p.length; i++) {
@@ -12,7 +13,11 @@ export function inside(p, poly) {
   for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
     const a = poly[i],
       b = poly[j];
-    if (a[1] > p[1] !== b[1] > p[1] && p[0] < ((b[0] - a[0]) * (p[1] - a[1])) / (b[1] - a[1]) + a[0]) c = !c;
+    if (
+      a[1] > p[1] !== b[1] > p[1] &&
+      p[0] < ((b[0] - a[0]) * (p[1] - a[1])) / (b[1] - a[1]) + a[0]
+    )
+      c = !c;
   }
   return c;
 }
@@ -20,7 +25,9 @@ function distance(p, a, b) {
   let x = b[0] - a[0],
     y = b[1] - a[1],
     t =
-      x * x + y * y ? Math.max(0, Math.min(1, ((p[0] - a[0]) * x + (p[1] - a[1]) * y) / (x * x + y * y))) : 0;
+      x * x + y * y
+        ? Math.max(0, Math.min(1, ((p[0] - a[0]) * x + (p[1] - a[1]) * y) / (x * x + y * y)))
+        : 0;
   return Math.hypot(p[0] - a[0] - t * x, p[1] - a[1] - t * y);
 }
 function rdp(p, e) {
@@ -53,13 +60,18 @@ export function simplify(p, e = 0.7) {
   const out = [...a.slice(0, -1), ...b.slice(0, -1)];
   return out.length >= 3 ? out : p;
 }
-export function maskFromRGBA(data, w, h, mode = 'white', threshold = 45) {
+export function maskFromRGBA(data, w, h, mode = 'white', threshold = 45, custom = '#ffffff') {
   const out = new Uint8Array(w * h),
-    bg = mode === 'black' ? [0, 0, 0] : mode === 'corner' ? [data[0], data[1], data[2]] : [255, 255, 255];
+    detected = detectBackground(data, w, h, mode, custom),
+    bg = detected.rgb ?? [0, 0, 0];
   for (let i = 0; i < out.length; i++) {
     const j = i * 4;
-    let d = Math.max(Math.abs(data[j] - bg[0]), Math.abs(data[j + 1] - bg[1]), Math.abs(data[j + 2] - bg[2]));
-    out[i] = data[j + 3] > 80 && (mode === 'alpha' || d > threshold) ? 1 : 0;
+    let d = Math.max(
+      Math.abs(data[j] - bg[0]),
+      Math.abs(data[j + 1] - bg[1]),
+      Math.abs(data[j + 2] - bg[2]),
+    );
+    out[i] = data[j + 3] > 80 && (detected.mode === 'alpha' || d > threshold) ? 1 : 0;
   }
   return out;
 }
@@ -167,7 +179,9 @@ export function traceMask(
         if (Math.abs(area(loop)) >= 2) loops.push(loop);
       }
     }
-    const outers = loops.filter((p) => area(p) > 0).sort((a, b) => Math.abs(area(b)) - Math.abs(area(a))),
+    const outers = loops
+        .filter((p) => area(p) > 0)
+        .sort((a, b) => Math.abs(area(b)) - Math.abs(area(a))),
       holes = loops.filter((p) => area(p) < 0);
     if (!outers.length) continue;
     const count = queue.length;
@@ -186,7 +200,10 @@ export function traceMask(
             )
             .join('')
         : '#f39c36',
-      regions: outers.map((outer) => ({ outer, holes: holes.filter((hole) => inside(hole[0], outer)) })),
+      regions: outers.map((outer) => ({
+        outer,
+        holes: holes.filter((hole) => inside(hole[0], outer)),
+      })),
       type: 'front',
     });
   }

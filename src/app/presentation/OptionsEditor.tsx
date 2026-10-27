@@ -1,3 +1,4 @@
+import { panelIntegrated } from '../../domain/recipes.ts';
 import { useState } from 'react';
 import {
   constructionNames,
@@ -132,41 +133,43 @@ export function OptionsEditor({
               ))}
             </select>
           </label>
-          {(['faceColor', 'returnColor'] as const).map((key) => (
-            <div className="option-colour" key={key}>
-              <label className="booklet-check">
-                <input
-                  type="checkbox"
-                  checked={patch[key] !== undefined}
-                  onChange={(e) =>
-                    e.target.checked
-                      ? change({
-                          [key]:
-                            current?.[key] ??
-                            (key === 'faceColor'
-                              ? (element?.color ?? design.settings.facecolor)
-                              : '#aeb9bd'),
-                        })
-                      : reset(key)
-                  }
-                />
-                Override {key === 'faceColor' ? 'face' : 'return'} colour
-              </label>
-              {patch[key] !== undefined && (
-                <>
+          {(['faceColor', 'returnColor'] as const)
+            .filter((key) => key !== 'returnColor' || !panelIntegrated(current?.type ?? 'front'))
+            .map((key) => (
+              <div className="option-colour" key={key}>
+                <label className="booklet-check">
                   <input
-                    aria-label={`${key === 'faceColor' ? 'Face' : 'Return'} colour`}
-                    type="color"
-                    value={patch[key] ?? '#aeb9bd'}
-                    onChange={(e) => change({ [key]: e.target.value })}
+                    type="checkbox"
+                    checked={patch[key] !== undefined}
+                    onChange={(e) =>
+                      e.target.checked
+                        ? change({
+                            [key]:
+                              current?.[key] ??
+                              (key === 'faceColor'
+                                ? (element?.color ?? design.settings.facecolor)
+                                : '#aeb9bd'),
+                          })
+                        : reset(key)
+                    }
                   />
-                  {key === 'returnColor' && (
-                    <button onClick={() => change({ returnColor: null })}>Bare metal</button>
-                  )}
-                </>
-              )}
-            </div>
-          ))}
+                  Override {key === 'faceColor' ? 'face' : 'return'} colour
+                </label>
+                {patch[key] !== undefined && (
+                  <>
+                    <input
+                      aria-label={`${key === 'faceColor' ? 'Face' : 'Return'} colour`}
+                      type="color"
+                      value={patch[key] ?? '#aeb9bd'}
+                      onChange={(e) => change({ [key]: e.target.value })}
+                    />
+                    {key === 'returnColor' && (
+                      <button onClick={() => change({ returnColor: null })}>Bare metal</button>
+                    )}
+                  </>
+                )}
+              </div>
+            ))}
         </>
       )}
       <label className="booklet-check">

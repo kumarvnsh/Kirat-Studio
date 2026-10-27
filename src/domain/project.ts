@@ -17,9 +17,15 @@ export type ConstructionType =
   | 'metal'
   | 'acplogo'
   | 'vinyl'
+  | 'acpbacklit'
+  | 'acpflush'
+  | 'pushthrough'
   | 'omit';
 
 export const constructionNames: Record<ConstructionType, string> = {
+  acpbacklit: 'ACP cut-out · backlit',
+  acpflush: 'Flush illuminated inlay',
+  pushthrough: 'Push-through acrylic',
   front: 'Front-lit',
   halo: 'Halo-lit',
   fronthalo: 'Front + halo',

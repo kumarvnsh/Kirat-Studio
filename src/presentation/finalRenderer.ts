@@ -1,3 +1,4 @@
+import { panelIntegrated } from '../domain/recipes.ts';
 import * as T from 'three';
 import { WebGLPathTracer, GradientEquirectTexture } from 'three-gpu-pathtracer';
 import { SignScene } from '../scene/scene.ts';
@@ -182,7 +183,14 @@ export class FinalRenderer {
       onProgress({ fraction: 1, label: 'Encoding image…' });
       const output =
         shot.camera.preset === 'exploded'
-          ? await labelledExplodedCanvas(renderer.domElement, explodedLabels(v.layers, camera))
+          ? await labelledExplodedCanvas(
+              renderer.domElement,
+              explodedLabels(
+                v.layers,
+                camera,
+                input.layout.elements.some((e) => panelIntegrated(e.type)),
+              ),
+            )
           : renderer.domElement;
       const blob = await canvasBlob(output);
       signal.throwIfAborted();

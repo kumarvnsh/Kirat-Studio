@@ -116,3 +116,7 @@ Stage 1 simulator: LCD and modular LED, dimensions/bezel/cabinets, resolution an
 ### Client booklet extension — 27 October 2026
 
 Named construction/colour options, visual comparison pages, labelled exploded views and Kirat Creations proposal branding are implemented. Project format v6 retains older project migration. See `client-booklet-verification.md` for checks and limits.
+
+### Illuminated ACP and colour tracing — 27 October 2026
+
+Automatic/manual background removal with trace preview and contrasting-colour groups; acrylic-backed ACP cut-outs, flush inlays and raised push-through inserts. Actual routed panel geometry, rear parts/LEDs, anatomy, DXF and proposal support. Project format v7 retains v1–v6 migration. See illuminated-acp-verification.md.

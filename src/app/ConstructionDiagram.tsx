@@ -3,7 +3,7 @@ import { useId, useState } from 'react';
 import { ConstructionReference } from './ConstructionReference.tsx';
 import { boardStack } from '../domain/layout.ts';
 import type { ConstructionType, DesignSettings } from '../domain/project.ts';
-import { frontLit, haloLit, recipes, VINYL_THICKNESS } from '../domain/recipes.ts';
+import { frontLit, haloLit, recipes, VINYL_THICKNESS, panelIntegrated } from '../domain/recipes.ts';
 
 export type ConstructionMeta = {
   type: ConstructionType;
@@ -11,16 +11,44 @@ export type ConstructionMeta = {
   subtitle: string;
   badge: string;
   howItWorks: string;
-  category: 'lit' | 'unlit' | 'utility';
+  category: 'lit' | 'panel' | 'unlit' | 'utility';
 };
 
 export const CONSTRUCTION_META: ConstructionMeta[] = [
+  {
+    type: 'acpbacklit',
+    title: 'ACP Cut-out · Backlit',
+    subtitle: 'Routed fascia + rear opal acrylic diffuser',
+    badge: 'Recessed light',
+    howItWorks:
+      'LEDs inside the tray illuminate acrylic behind openings routed through the ACP. No channel-letter returns.',
+    category: 'panel',
+  },
+  {
+    type: 'acpflush',
+    title: 'Flush Illuminated Inlay',
+    subtitle: 'Shouldered acrylic inserts level with the ACP',
+    badge: 'Flush face',
+    howItWorks:
+      'Machined acrylic fills the panel openings flush with the fascia; a rear shoulder retains it and LEDs light it from inside.',
+    category: 'panel',
+  },
+  {
+    type: 'pushthrough',
+    title: 'Push-through Acrylic',
+    subtitle: 'Illuminated acrylic projecting through the fascia',
+    badge: 'Raised insert',
+    howItWorks:
+      'Acrylic inserts pass through routed ACP openings. Their faces and projecting edges illuminate from rear LEDs.',
+    category: 'panel',
+  },
   {
     type: 'front',
     title: 'Front-lit',
     subtitle: 'Opaque metal sides + glowing acrylic front face',
     badge: 'Front glow',
-    howItWorks: 'LEDs inside shine forward through the coloured acrylic face; metal sides stay dark.',
+    howItWorks:
+      'LEDs inside shine forward through the coloured acrylic face; metal sides stay dark.',
     category: 'lit',
   },
   {
@@ -28,7 +56,8 @@ export const CONSTRUCTION_META: ConstructionMeta[] = [
     title: 'Halo-lit (Back-lit)',
     subtitle: 'Solid metal face on standoffs + rear wall-wash glow',
     badge: 'Rear halo',
-    howItWorks: 'Face is solid metal; LEDs shine backward onto the sign board to create a soft halo.',
+    howItWorks:
+      'Face is solid metal; LEDs shine backward onto the sign board to create a soft halo.',
     category: 'lit',
   },
   {
@@ -44,7 +73,8 @@ export const CONSTRUCTION_META: ConstructionMeta[] = [
     title: 'Full Acrylic',
     subtitle: 'All-acrylic body — front face & side walls both glow',
     badge: '360° glow',
-    howItWorks: 'Both the front face and the 3D side walls are cast acrylic so the whole letter glows.',
+    howItWorks:
+      'Both the front face and the 3D side walls are cast acrylic so the whole letter glows.',
     category: 'lit',
   },
   {
@@ -93,6 +123,7 @@ export const CONSTRUCTION_META: ConstructionMeta[] = [
 // between Front-lit, Halo-lit, Front+Halo, Full Acrylic, Flat Cut, and Vinyl is unmistakable.
 function Letter3DReferenceThumb({ type }: { type: ConstructionType }) {
   const uid = useId().replace(/:/g, '');
+  if (panelIntegrated(type)) return <IntegratedAnatomy type={type} compact />;
   const isFront = frontLit(type);
   const isHalo = haloLit(type);
   const isFullAcrylic = type === 'fullacrylic';
@@ -200,7 +231,12 @@ function Letter3DReferenceThumb({ type }: { type: ConstructionType }) {
             fillRule="evenodd"
           />
           <circle cx="55" cy="14" r="7" fill="#b4442f" />
-          <path d="M52.5 11.5 L57.5 16.5 M57.5 11.5 L52.5 16.5" stroke="#fff" strokeWidth="1.6" strokeLinecap="round" />
+          <path
+            d="M52.5 11.5 L57.5 16.5 M57.5 11.5 L52.5 16.5"
+            stroke="#fff"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+          />
         </g>
       ) : isVinyl ? (
         <g>
@@ -209,16 +245,21 @@ function Letter3DReferenceThumb({ type }: { type: ConstructionType }) {
           {/* Little peeled decal corner cue */}
           <polygon points="46,9 51,14 45,14" fill="#ffe0b2" />
           <rect x="4" y="5" width="21" height="11" rx="2" fill="#253b47" />
-          <text x="14.5" y="12.5" fontSize="6.2" fill="#b8cbd4" textAnchor="middle" fontWeight="700">
+          <text
+            x="14.5"
+            y="12.5"
+            fontSize="6.2"
+            fill="#b8cbd4"
+            textAnchor="middle"
+            fontWeight="700"
+          >
             2D FILM
           </text>
         </g>
       ) : (
         <g>
           {/* 1. Rear Halo Glow on the board (if Halo or Front+Halo) */}
-          {isHalo && (
-            <ellipse cx="36" cy="27" rx="27" ry="21" fill={`url(#${uid}-halo)`} />
-          )}
+          {isHalo && <ellipse cx="36" cy="27" rx="27" ry="21" fill={`url(#${uid}-halo)`} />}
 
           {/* Soft drop shadow on board for unlit letters */}
           {!isHalo && !isFront && (
@@ -234,7 +275,12 @@ function Letter3DReferenceThumb({ type }: { type: ConstructionType }) {
           )}
 
           {/* 3. Extruded 3D Side Return Walls */}
-          <g fill={sideFill} stroke={isFullAcrylic ? '#ffbe42' : '#101c24'} strokeWidth="0.7" strokeLinejoin="round">
+          <g
+            fill={sideFill}
+            stroke={isFullAcrylic ? '#ffbe42' : '#101c24'}
+            strokeWidth="0.7"
+            strokeLinejoin="round"
+          >
             <polygon points={aOuter(fx + dx, fy + dy)} />
             <polygon points={leftSideQuad} />
             <polygon points={topRoofQuad} />
@@ -272,14 +318,7 @@ function Letter3DReferenceThumb({ type }: { type: ConstructionType }) {
           )}
 
           {/* Corner visual cue badge inside thumbnail */}
-          <rect
-            x="4"
-            y="4"
-            width={isFullAcrylic ? 25 : 22}
-            height="10.5"
-            rx="2"
-            fill="#0e1a22cc"
-          />
+          <rect x="4" y="4" width={isFullAcrylic ? 25 : 22} height="10.5" rx="2" fill="#0e1a22cc" />
           <text
             x={isFullAcrylic ? 16.5 : 15}
             y="11.3"
@@ -308,20 +347,51 @@ function Letter3DReferenceThumb({ type }: { type: ConstructionType }) {
   );
 }
 
-export function ConstructionPicker({ value, inheritLabel, onChange }: {
-  value: ConstructionType | 'inherit' | ''; inheritLabel?: string;
+export function ConstructionPicker({
+  value,
+  inheritLabel,
+  onChange,
+}: {
+  value: ConstructionType | 'inherit' | '';
+  inheritLabel?: string;
   onChange: (next: ConstructionType | 'inherit') => void;
 }) {
-  const [open,setOpen]=useState(false);
-  const selected=CONSTRUCTION_META.find(item=>item.type===value);
-  return <div className="construction-choice"><button className="current-construction" onClick={()=>setOpen(true)} aria-haspopup="dialog">
-    <span><b>{selected?.title ?? (value==='inherit'?'Same as group':'Mixed constructions')}</b><small>{selected?.badge ?? inheritLabel ?? 'Choose a construction'}</small></span><span className="change-label">Change ⌄</span></button>
-    {selected&&<p className="construction-explanation">{selected.subtitle}</p>}
-    {open&&<Dialog title="Choose a construction" wide onClose={()=>setOpen(false)}><p className="muted">Compare how the face, sides and rear light behave. Changing construction resets its recipe parameters; letter overrides remain unless explicitly changed.</p>
-      <ConstructionOptions value={value} inheritLabel={inheritLabel} onChange={next=>{onChange(next);setOpen(false);}} />
-      <p className="muted reference-note">AI-generated appearance references. Project dimensions and material layers are shown in the live anatomy diagram.</p>
-    </Dialog>}
-  </div>;
+  const [open, setOpen] = useState(false);
+  const selected = CONSTRUCTION_META.find((item) => item.type === value);
+  return (
+    <div className="construction-choice">
+      <button className="current-construction" onClick={() => setOpen(true)} aria-haspopup="dialog">
+        <span>
+          <b>
+            {selected?.title ?? (value === 'inherit' ? 'Same as group' : 'Mixed constructions')}
+          </b>
+          <small>{selected?.badge ?? inheritLabel ?? 'Choose a construction'}</small>
+        </span>
+        <span className="change-label">Change ⌄</span>
+      </button>
+      {selected && <p className="construction-explanation">{selected.subtitle}</p>}
+      {open && (
+        <Dialog title="Choose a construction" wide onClose={() => setOpen(false)}>
+          <p className="muted">
+            Compare how the face, sides and rear light behave. Changing construction resets its
+            recipe parameters; letter overrides remain unless explicitly changed.
+          </p>
+          <ConstructionOptions
+            value={value}
+            inheritLabel={inheritLabel}
+            onChange={(next) => {
+              onChange(next);
+              setOpen(false);
+            }}
+          />
+          <p className="muted reference-note">
+            Illustrative appearance references and construction sections. Project dimensions and
+            material layers are shown in the live anatomy diagram.
+          </p>
+        </Dialog>
+      )}
+    </div>
+  );
 }
 
 function ConstructionOptions({
@@ -347,7 +417,11 @@ function ConstructionOptions({
               onClick={() => onChange(m.type)}
               title={`${recipes[m.type].name}: ${m.howItWorks}`}
             >
-              <ConstructionReference className="construction-reference" type={m.type} fallback={<Letter3DReferenceThumb type={m.type} />} />
+              <ConstructionReference
+                className="construction-reference"
+                type={m.type}
+                fallback={<Letter3DReferenceThumb type={m.type} />}
+              />
               <div className="c-card-body">
                 <div className="c-card-top">
                   <b>{m.title}</b>
@@ -376,6 +450,10 @@ function ConstructionOptions({
             <small>Follow the parent group’s construction &amp; dimensions</small>
           </div>
         </button>
+      )}
+      {renderGroup(
+        'Illuminated ACP · Flat / Inlay / Push-through',
+        CONSTRUCTION_META.filter((m) => m.category === 'panel'),
       )}
       {renderGroup(
         'Illuminated 3D Channel Letters',
@@ -416,8 +494,13 @@ export function CrossSectionDiagram({
   const boardDepth = +(boardFront - boardLayers[0].z0).toFixed(1);
 
   const p = type
-    ? { ...Object.fromEntries(Object.entries(recipes[type].params).map(([k, v]) => [k, v.value])), ...params }
+    ? {
+        ...Object.fromEntries(Object.entries(recipes[type].params).map(([k, v]) => [k, v.value])),
+        ...params,
+      }
     : {};
+  if (type && panelIntegrated(type))
+    return <IntegratedAnatomy type={type} settings={settings} params={p} />;
   const standoff = p.standoff ?? 0;
   const depth = p.depth ?? 0;
   const face = p.face ?? 0;
@@ -468,7 +551,8 @@ export function CrossSectionDiagram({
       stackSteps.push({
         num: '2',
         title: standoff > 0 ? `Pin Standoffs (${standoff} mm gap)` : 'Flush Stud Mount (0 mm gap)',
-        detail: standoff > 0 ? 'Raises letter off the ACP fascia' : 'Mounted directly against ACP face',
+        detail:
+          standoff > 0 ? 'Raises letter off the ACP fascia' : 'Mounted directly against ACP face',
         color: '#90a0a6',
       });
       stackSteps.push({
@@ -500,9 +584,7 @@ export function CrossSectionDiagram({
       stackSteps.push({
         num: '4',
         title:
-          type === 'halo'
-            ? `Solid Metal Face (${face} mm)`
-            : `Glowing Acrylic Face (${face} mm)`,
+          type === 'halo' ? `Solid Metal Face (${face} mm)` : `Glowing Acrylic Face (${face} mm)`,
         detail:
           type === 'halo'
             ? 'Opaque front blocks forward light for pure halo'
@@ -525,7 +607,12 @@ export function CrossSectionDiagram({
 
       <div className="xsec-visual-row">
         {/* Left: Easy-to-read 3D Isometric Cutaway Illustration */}
-        <svg className="xsec-svg" viewBox="0 0 156 122" role="img" aria-label="3D letter cutaway diagram">
+        <svg
+          className="xsec-svg"
+          viewBox="0 0 156 122"
+          role="img"
+          aria-label="3D letter cutaway diagram"
+        >
           <defs>
             <radialGradient id={`${uid}-halo`} cx="50%" cy="50%" r="50%">
               <stop offset="0%" stopColor={glowColor} stopOpacity="0.95" />
@@ -551,7 +638,12 @@ export function CrossSectionDiagram({
 
           {/* 1. Isometric Multi-layer Sign Board Slab on the left */}
           {/* MS Steel Frame rear layer */}
-          <polygon points="10,24 24,14 24,88 10,98" fill="#46565e" stroke="#263339" strokeWidth="0.8" />
+          <polygon
+            points="10,24 24,14 24,88 10,98"
+            fill="#46565e"
+            stroke="#263339"
+            strokeWidth="0.8"
+          />
           {/* ACP Fascia front surface (angled isometric plane) */}
           <polygon
             points="24,14 58,24 58,98 24,88"
@@ -564,7 +656,14 @@ export function CrossSectionDiagram({
 
           {!type || type === 'omit' ? (
             <g>
-              <text x="104" y="56" fontSize="7.5" fill="#9cb1ba" textAnchor="middle" fontWeight="600">
+              <text
+                x="104"
+                y="56"
+                fontSize="7.5"
+                fill="#9cb1ba"
+                textAnchor="middle"
+                fontWeight="600"
+              >
                 {type === 'omit' ? 'Shape excluded' : 'Select a Group'}
               </text>
               <text x="104" y="68" fontSize="6.8" fill="#6f8792" textAnchor="middle">
@@ -587,9 +686,7 @@ export function CrossSectionDiagram({
               return (
                 <g>
                   {/* Rear Halo Glow splashed on the ACP Fascia */}
-                  {isHalo && (
-                    <ellipse cx="46" cy="58" rx="22" ry="32" fill={`url(#${uid}-halo)`} />
-                  )}
+                  {isHalo && <ellipse cx="46" cy="58" rx="22" ry="32" fill={`url(#${uid}-halo)`} />}
 
                   {/* Standoff pins if standoff > 0 */}
                   {standoff > 0 && (
@@ -718,6 +815,69 @@ export function CrossSectionDiagram({
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function IntegratedAnatomy({
+  type,
+  settings,
+  params = {},
+  compact = false,
+}: {
+  type: ConstructionType;
+  settings?: DesignSettings;
+  params?: Record<string, number>;
+  compact?: boolean;
+}) {
+  const rear = type === 'acpbacklit',
+    raised = type === 'pushthrough';
+  return (
+    <div className="integrated-anatomy">
+      <svg
+        viewBox="0 0 320 160"
+        role="img"
+        aria-label={`${recipes[type].name} section: rear LEDs, acrylic and routed ACP`}
+      >
+        <rect width="320" height="160" rx="8" fill="#142e38" />
+        <rect x="155" y="18" width="10" height="32" fill={settings?.boardcolor ?? '#829b91'} />
+        <rect x="155" y="112" width="10" height="28" fill={settings?.boardcolor ?? '#829b91'} />
+        <rect x={rear ? 140 : 151} y="47" width={rear ? 8 : 8} height="68" fill="#c1f2ed" />
+        {!rear && <rect x="155" y="50" width={raised ? 37 : 10} height="62" fill="#e3fff7" />}
+        <rect x="70" y="67" width="12" height="25" rx="3" fill="#f6d174" />
+        <path d="M90 70 L130 58 M90 80 L130 80 M90 90 L130 103" stroke="#f6d174" strokeWidth="2" />
+        <text x="20" y="24" fill="white" fontSize="11">
+          REAR / TRAY
+        </text>
+        <text x="205" y="24" fill="white" fontSize="11">
+          FRONT
+        </text>
+        <text x="47" y="120" fill="#f6d174" fontSize="10">
+          LEDs
+        </text>
+        <text x="174" y="137" fill="#c1f2ed" fontSize="10">
+          {rear ? 'Acrylic backing' : raised ? 'Raised insert' : 'Flush insert'}
+        </text>
+        <text x="170" y="43" fill="#b9c9ca" fontSize="10">
+          ACP cut-out
+        </text>
+      </svg>
+      {!compact && (
+        <>
+          <b>{recipes[type].name}</b>
+          <p>
+            {settings?.acp} mm routed ACP ·{' '}
+            {rear
+              ? `${params.face ?? 3} mm rear diffuser, ${params.recess ?? 0} mm recess`
+              : `${params.back ?? 3} mm retaining shoulder, ${raised ? (params.projection ?? 10) : 0} mm front projection`}{' '}
+            · LEDs {params.ledSetback ?? 25} mm behind ACP rear.
+          </p>
+          <small>
+            Counter islands require acrylic retention or bridges. Check rear frame, backing and LED
+            clearance. Section schematic; no individual channel returns.
+          </small>
+        </>
+      )}
     </div>
   );
 }

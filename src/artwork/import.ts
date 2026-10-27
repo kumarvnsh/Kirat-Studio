@@ -1,18 +1,20 @@
 // Raster artwork import: crop → background mask → contours → attach dots → groups.
+import { detectBackground } from './background.js';
 import { maskFromRGBA, traceMask } from './contours.js';
-import { attachDetails, autoGroup } from './grouping.js';
+import { attachDetails, autoGroup, splitColourGroups } from './grouping.js';
 import type { Artwork, ArtworkGroup } from '../domain/project.ts';
 
 export type TraceOptions = {
   crop: { x: number; y: number; w: number; h: number }; // percent of the source image
   background: string; // 'white' | 'corner' | 'black' | 'alpha'
+  backgroundColor?: string;
   threshold: number;
   minpixels: number;
 };
 
 export const defaultTrace = (): TraceOptions => ({
   crop: { x: 0, y: 0, w: 100, h: 100 },
-  background: 'white',
+  background: 'auto',
   threshold: 45,
   minpixels: 12,
 });
@@ -29,7 +31,12 @@ export function loadImage(url: string): Promise<HTMLImageElement> {
 export function traceImage(
   source: HTMLImageElement,
   o: TraceOptions,
-): { artwork: Artwork; truncated: boolean } {
+): {
+  artwork: Artwork;
+  truncated: boolean;
+  likelyBackground: boolean;
+  background: ReturnType<typeof detectBackground>;
+} {
   const ix = source.naturalWidth,
     iy = source.naturalHeight;
   if (ix * iy > 25e6) throw Error('Use an image smaller than 25 megapixels.');
@@ -47,7 +54,7 @@ export function traceImage(
   const ctx = c.getContext('2d', { willReadFrequently: true })!;
   ctx.drawImage(source, x, y, cw, ch, 0, 0, w, h);
   const image = ctx.getImageData(0, 0, w, h),
-    mask = maskFromRGBA(image.data, w, h, o.background, o.threshold);
+    mask = maskFromRGBA(image.data, w, h, o.background, o.threshold, o.backgroundColor);
   const result = traceMask(mask, w, h, {
     minPixels: Math.max(3, o.minpixels || 12),
     tolerance: 0.8,
@@ -56,15 +63,20 @@ export function traceImage(
   });
   if (!result.components.length)
     throw Error('No shapes found. Lower tolerance, change background mode, or check the crop.');
+  const background = detectBackground(image.data, w, h, o.background, o.backgroundColor);
   for (let i = 0; i < mask.length; i++) if (!mask[i]) image.data[i * 4 + 3] = 0;
   ctx.putImageData(image, 0, 0);
-  const { groups, components } = autoGroup(attachDetails(result.components));
+  const spatial = autoGroup(attachDetails(result.components));
+  const { groups, components } = splitColourGroups(spatial.groups, spatial.components);
   const elements = components.map((p: any, i: number) => ({
     ...p,
     name: 'Element ' + String(i + 1).padStart(2, '0'),
   }));
-  const b = (k: number, f: (...n: number[]) => number) => f(...elements.map((p: any) => p.bounds[k]));
+  const b = (k: number, f: (...n: number[]) => number) =>
+    f(...elements.map((p: any) => p.bounds[k]));
   return {
+    background,
+    likelyBackground: result.components.some((p: any) => p.pixels > w * h * 0.85),
     truncated: result.truncated,
     artwork: {
       elements,

@@ -1,3 +1,4 @@
+import { panelIntegrated } from '../domain/recipes.ts';
 import { computeLayout } from '../domain/layout.ts';
 import { constructionNames, type DesignState } from '../domain/project.ts';
 import { formatInUnit, type LengthUnit } from '../domain/units.ts';
@@ -70,7 +71,7 @@ export function materialSummary(design: DesignState): string[] {
       (design.settings.keepart
         ? design.artwork?.elements.find((a) => a.id === e.id)?.color
         : design.settings.facecolor);
-    const name = `${constructionNames[e.type]} · face ${face ?? 'artwork'}${e.returnColor ? ` · painted return ${e.returnColor}` : ''}`;
+    const name = `${constructionNames[e.type]} · face ${face ?? 'artwork'}${e.returnColor && !panelIntegrated(e.type) ? ` · painted return ${e.returnColor}` : ''}${panelIntegrated(e.type) ? ` · rear LEDs${e.type === 'pushthrough' ? ` · ${e.params.projection} mm projection` : e.type === 'acpflush' ? ' · flush face' : ' · rear diffuser'}` : ''}`;
     groups.set(name, (groups.get(name) ?? 0) + 1);
   }
   return [

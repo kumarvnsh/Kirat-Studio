@@ -9,7 +9,7 @@ import { resizeArtwork } from '../editor/resizeArtwork.ts';
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { computeLayout, type ElementLayout } from '../domain/layout.ts';
 import { kelvinToHex, LED_TEMPS } from '../domain/lighting.ts';
-import { checkParams, recipes, resolveParams } from '../domain/recipes.ts';
+import { checkParams, recipes, resolveParams, panelIntegrated } from '../domain/recipes.ts';
 import {
   checkSettings,
   numericSettings,
@@ -272,7 +272,7 @@ function GroupProps({ a, g }: { a: Artwork; g: ArtworkGroup }) {
 
           </div>
           <div className="pair">
-            <ScrubInput
+            {!panelIntegrated(g.type) && (<ScrubInput
               label="Character depth"
               min={0.15}
               max={200}
@@ -298,7 +298,7 @@ function GroupProps({ a, g }: { a: Artwork; g: ArtworkGroup }) {
                   scrubbing ? `gcd-${g.id}` : undefined,
                 )
               }
-            />
+            />)}
             {els.length > 1 && (
               <ScrubInput
                 label="Character spacing"
@@ -385,7 +385,7 @@ function GroupProps({ a, g }: { a: Artwork; g: ArtworkGroup }) {
       />
       {recipe.lit && (
         <>
-          <ColorField
+          {!panelIntegrated(g.type) && (<ColorField
             label="Return wall colour"
             value={g.returnColor}
             fallback="Natural metal"
@@ -399,7 +399,7 @@ function GroupProps({ a, g }: { a: Artwork; g: ArtworkGroup }) {
                 live ? `gret-${g.id}` : undefined,
               )
             }
-          />
+          />)}
           <details className="property-details"><summary>Group lighting</summary><GroupLightingField a={a} g={g} boardTemp={design.settings.ledTemp} /></details>
         </>
       )}
@@ -589,7 +589,7 @@ function ElementProps({ a, e }: { a: Artwork; e: ArtworkElement }) {
 
           </div>
           <div className="pair">
-            <ScrubInput
+            {!panelIntegrated(e.type) && (<ScrubInput
               label="Character depth"
               min={0.15}
               max={200}
@@ -602,7 +602,7 @@ function ElementProps({ a, e }: { a: Artwork; e: ArtworkElement }) {
                   scrubbing ? `ecd-${e.id}` : undefined,
                 )
               }
-            />
+            />)}
             <ScrubInput
               label="Character X offset"
               min={-1000}

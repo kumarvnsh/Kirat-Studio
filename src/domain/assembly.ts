@@ -1,5 +1,6 @@
 // Assembly sequence: dependency-ordered steps, each revealing assembly layers and listing its parts.
 // Explanatory sequence for planning, not an approved workshop procedure.
+import { panelIntegrated } from './recipes.ts';
 import type { DesignState, LayerId } from './project.ts';
 
 export type AssemblyStep = {
@@ -26,7 +27,8 @@ export function assemblySteps(design: DesignState): AssemblyStep[] {
     {
       id: 'gi',
       title: 'Attach rear GI cover',
-      description: 'Fix the GI sheet to the rear of the frame. Leave a service panel at the PSU bay.',
+      description:
+        'Fix the GI sheet to the rear of the frame. Leave a service panel at the PSU bay.',
       dependsOn: ['frame'],
       adds: ['gi'],
     },
@@ -81,7 +83,8 @@ export function assemblySteps(design: DesignState): AssemblyStep[] {
     {
       id: 'mount',
       title: 'Mount letters',
-      description: 'Fix letters to the fascia with studs and spacers; pass cables through the penetrations.',
+      description:
+        'Fix letters to the fascia with studs and spacers; pass cables through the penetrations.',
       dependsOn: ['acp', 'faces'],
       adds: ['mounting'],
     },
@@ -102,6 +105,38 @@ export function assemblySteps(design: DesignState): AssemblyStep[] {
       adds: [],
     },
   ];
+  const integrated = design.artwork?.elements.some((e) => panelIntegrated(e.type));
+  if (integrated)
+    for (const step of steps) {
+      if (step.id === 'acp')
+        step.description =
+          'Route the selected illuminated openings through the ACP. Retain counter islands on acrylic; check frame and backing obstructions before fixing the fascia.';
+      if (step.id === 'backs')
+        step.description =
+          'Cut rear acrylic retainers/backers for integrated inserts and backs for any conventional channel letters.';
+      if (
+        step.id === 'returns' &&
+        !design.artwork?.elements.some(
+          (e) =>
+            e.type !== 'omit' &&
+            !panelIntegrated(e.type) &&
+            ['front', 'halo', 'fronthalo', 'fullacrylic'].includes(e.type),
+        )
+      ) {
+        step.title = 'Prepare acrylic retention';
+        step.description =
+          'Check rear shoulders, adhesive/bonding areas and retained counter islands. These panel types have no channel return strips.';
+      }
+      if (step.id === 'leds')
+        step.description =
+          'Install rear-facing-to-fascia tray LEDs behind integrated openings, and LEDs inside any conventional letters. Check diffuser clearance and frame shadows.';
+      if (step.id === 'faces')
+        step.description =
+          'Fit acrylic-backed, flush or projecting inserts into the routed panel; fit any conventional faces and flat letters.';
+      if (step.id === 'mount')
+        step.description =
+          'Secure integrated acrylic retainers and counter islands; mount any conventional letters with their specified fixings.';
+    }
   return steps;
 }
 

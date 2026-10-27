@@ -30,7 +30,7 @@ Requires Node 20+.
 | `src/fabrication/` | Return-strip bend schedules (`bending.ts`), tool compensation and cut checks (`cutting.ts`), fabrication plan + CSV (`plan.ts`), DXF via maker.js (`dxf.ts`) |
 | `src/editor/history.ts` | Immutable undo/redo over designs |
 | `src/editor/artworkOps.ts` | Structure edits: rename, create / move / merge / delete / reorder groups, constructions and colours |
-| `src/storage/project.ts` | Project file format v6, v1–v5 migration, validation, browser autosave |
+| `src/storage/project.ts` | Project file format v7, v1–v6 migration, validation, browser autosave |
 | `src/presentation/` | Repeatable cameras, progressive final rendering, render queue, shared booklet layout, PDF and image exports |
 | `src/app/presentation/` | Prepare renders → Build booklet → Export client workspace |
 | `src/scene/scene.ts` | Three.js display of the layout (mm → m); HDR pipeline via pmndrs/postprocessing: exposure → bloom → AgX tone mapping; PBR finishes; stills |
@@ -55,9 +55,12 @@ Milestones A and B done. Milestone C done:
 
 - Dimensioned board stack (GI, MS frame, optional backing sheet, ACP) with z positions and frame members.
 - Recipes, editable per artwork group in the inspector: front-lit (optional trim cap), halo-lit, front + halo, full acrylic, flat acrylic / metal / ACP, vinyl. Changing a group's construction resets its params.
+- Panel-integrated illuminated ACP: acrylic-backed cut-outs, flush acrylic inlays and raised push-through inserts. Fascia openings, rear retainers and LEDs share the actual layout, drawings, DXF and presentation renders. These types have no channel return strips. Counter retention, opaque backing and rear cavity clearance require review.
 - Letter mounting: fixing studs through the fascia for every non-vinyl letter, plus spacers when a recipe has a standoff.
 - Placeholder power plan: load from the LED grid, PSUs sized at ≤ 80% loading and parked in the bottom-right frame bay, one cable run and penetration per lit element, fit warnings (PSU deeper than the frame, bay full, LED cap).
 - Per-element stack readout, board stack table, power summary and preliminary BOM; 10 assembly layers.
+
+Raster import now previews automatic border/transparency detection before applying. A manual background colour, crop and tolerance can correct the trace; detected background can be applied to the fascia explicitly. Strongly contrasting colours split into editable groups, while counters and negative-space lettering remain holes.
 
 Artwork import: **SVG is imported as vectors** (three's `SVGLoader`): exact curves flattened to 0.1 unit tolerance on a 1400-unit canvas, holes, transforms and `<use>` references preserved; top-level `<g>` groups (Inkscape label, `data-name` or id) become artwork groups; stroke-only paths are ignored. PNG/JPG/WebP are still traced from pixels.
 
@@ -73,7 +76,7 @@ Milestone D (customer-ready visuals) done for presentation level:
 - Select multiple views across options and render them sequentially with per-job progress and cancellation. Export has page checkboxes sharing inclusion with Build booklet, plus an independent project-notes choice.
 - Fast raster previews and a separate progressive path-traced final render (512 samples; 2400 or 3840 px). Final capture preserves physical layout, adds actual rear-light spill and uses independent environment illumination and sign power. Final finishes retain base PBR reflections; the extra clear-coat lobe is disabled to avoid non-finite output in the legacy WebGL tracer. Render progress, cancellation, retry and outdated-image status are explicit.
 - Export an A4 landscape vector PDF, composed PNG/JPG pages (3508 × 2480), or individual render images. Image batches download as ZIPs. Final exports require current final images; draft export is explicit and marked.
-- Presentation configuration is saved separately in project v6. Full images are cached in this browser, outside JSON; opening a project on another device requires rerendering. Cache errors retain in-memory results for export. PDF lettering is vector outlines to preserve Latin/Devanagari shaping consistently; it is not searchable text.
+- Presentation configuration is saved separately in project v7. Full images are cached in this browser, outside JSON; opening a project on another device requires rerendering. Cache errors retain in-memory results for export. PDF lettering is vector outlines to preserve Latin/Devanagari shaping consistently; it is not searchable text.
 - Not done: a *calibrated* preview compared against photographs of a real sample (needs measurements), site-photo placement or cloud render services. Built-in surroundings remain curated 3D scenes, not photographs.
 
 Milestone E (fabrication preview) done at geometric level:

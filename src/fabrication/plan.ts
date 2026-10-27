@@ -1,7 +1,8 @@
 // Fabrication plan: which parts are cut from sheet, their tool-compensated paths, return-strip
 // schedules and manufacturability issues. Derived from the layout; nothing here edits the design.
 import { computeLayout } from '../domain/layout.ts';
-import { recipes } from '../domain/recipes.ts';
+import { fasciaRegions } from '../domain/panelOpenings.ts';
+import { recipes, panelIntegrated } from '../domain/recipes.ts';
 import type { DesignState, Region } from '../domain/project.ts';
 import { bendSchedule, defaultBendOptions, type BendOptions, type StripSchedule } from './bending.ts';
 import { cutChecks, defaultCut, toolpath, type CutIssue, type CutSettings } from './cutting.ts';
@@ -16,7 +17,7 @@ export type CutPart = {
   element: string;
   name: string;
   group: string;
-  part: 'back' | 'face' | 'flat' | 'vinyl';
+  part: 'back' | 'face' | 'flat' | 'vinyl' | 'fascia';
   material: string;
   outline: Region[]; // approved outline, mm
   toolpath: Region[]; // compensated (vinyl: plotter, uncompensated)
@@ -33,6 +34,10 @@ export function fabricationPlan(design: DesignState, fab: FabricationState): Fab
   const L = computeLayout(design),
     groups = design.artwork?.groups ?? [],
     plan: FabPlan = { cuts: [], strips: [], issues: [] };
+  if(L.elements.some(e=>panelIntegrated(e.type))){
+    const outline=fasciaRegions(L,design.settings);
+    plan.cuts.push({element:'__board',name:'Routed ACP fascia',group:'Board',part:'fascia',material:`ACP ${design.settings.acp} mm`,outline,toolpath:outline.flatMap(r=>toolpath(r,fab.cut))});
+  }
   for (const e of L.elements) {
     const group = groups.find((g) => g.id === e.group)?.name ?? '',
       base = { element: e.id, name: e.name, group };
@@ -51,15 +56,15 @@ export function fabricationPlan(design: DesignState, fab: FabricationState): Fab
         ...base,
         part: kind,
         material: p.material,
-        outline: e.regions,
-        toolpath: kind === 'vinyl' ? e.regions : e.regions.flatMap((r) => toolpath(r, fab.cut)),
+        outline: p.regions ?? e.regions,
+        toolpath: kind === 'vinyl' ? (p.regions ?? e.regions) : (p.regions ?? e.regions).flatMap((r) => toolpath(r, fab.cut)),
       });
     }
     if (e.type !== 'vinyl') {
       const issues = e.regions.flatMap((r) => cutChecks(r, fab.cut));
       if (issues.length) plan.issues.push({ ...base, issues });
     }
-    if (lit)
+    if (lit && !panelIntegrated(e.type))
       plan.strips.push({
         ...base,
         schedules: e.regions.flatMap((r) => [

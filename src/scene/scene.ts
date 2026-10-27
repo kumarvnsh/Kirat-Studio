@@ -18,7 +18,8 @@ import { BLOOM_THRESHOLD, cameraExposure, emission, environments, kelvinToHex } 
 import { bentPath } from '../artwork/contours.js';
 import { LAYERS, type LayerId, type Point, type Region } from '../domain/project.ts';
 import { LED_SIZE, type ElementLayout, type LetterPart, type SceneInput } from '../domain/layout.ts';
-import { frontLit, haloLit, recipes } from '../domain/recipes.ts';
+import { fasciaRegions } from '../domain/panelOpenings.ts';
+import { frontLit, haloLit, recipes, panelIntegrated } from '../domain/recipes.ts';
 import { PSU_SIZE } from '../domain/layout.ts';
 import { buildScenery, disposeScenery, contextFrame, type Scenery } from './scenery.ts';
 import { normalizeScenePreset } from '../domain/scenePresets.ts';
@@ -491,7 +492,12 @@ export class SignScene {
       backing: 0.0003,
       acp: 0.0006,
     };
+    const routedPanel = L.elements.some(e=>panelIntegrated(e.type));
     for (const b of L.board) {
+      if (routedPanel && b.layer === 'acp') {
+        mesh(new T.ExtrudeGeometry(fasciaRegions(L,st).map(r=>shapeFromRegion(toM(r))), {depth:(b.z1-b.z0)*M, bevelEnabled:false}), sheetColour.acp!, 'acp', b.z0*M);
+        continue;
+      }
       if (b.layer === 'frame') continue;
       mesh(
         new T.BoxGeometry(W, H, (b.z1 - b.z0) * M),
@@ -570,11 +576,12 @@ export class SignScene {
     ) => T.Mesh,
     lit: boolean,
   ) {
+    if (p.regions) regions = p.regions.map(toM);
     const st = s.settings,
       L = s.layout,
       rawDepth = (p.z1 - p.z0) * M,
       // Lift letter parts 1mm above the board fascia and step stacked seams by 0.2mm to eliminate z-fighting.
-      partZBias =
+      partZBias = panelIntegrated(e.type) ? 0 :
         p.kind === 'back'
           ? 0.001
           : p.kind === 'returns'
@@ -669,6 +676,7 @@ export class SignScene {
 
     if (p.kind === 'stud') pins(0.0025, this.material('#8d969a', 0.9, 0.35), false);
     else if (p.kind === 'standoff') pins(0.006, this.material('#b9c2c4', 0.9, 0.3), true);
+    else if (p.kind === 'back' && panelIntegrated(e.type)) extrude(this.finish('acrylic', '#f4f7f7'), false);
     else if (p.kind === 'back') {
       const mat = haloLit(e.type)
         ? new T.MeshStandardMaterial({ color: '#dfe8ea', roughness: 0.1, transparent: true, opacity: 0.45 })

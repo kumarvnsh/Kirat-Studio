@@ -31,6 +31,9 @@ import {
 } from './store.ts';
 
 export const shortType: Record<ConstructionType, string> = {
+  acpbacklit: 'ACP backlit',
+  acpflush: 'Flush inlay',
+  pushthrough: 'Push-through',
   front: 'Front-lit',
   halo: 'Halo',
   fronthalo: 'Front+halo',

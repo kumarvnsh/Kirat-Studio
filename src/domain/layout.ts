@@ -3,7 +3,8 @@
 // The renderer, the BOM and the inspector all read this; none of them repeat the math.
 import { normalizeScenePreset } from './scenePresets.ts';
 import { inside, perimeter } from '../artwork/contours.js';
-import { recipes, resolveParams, VINYL_THICKNESS } from './recipes.ts';
+import { expandRegions } from './panelOpenings.ts';
+import { recipes, panelIntegrated, resolveParams, VINYL_THICKNESS } from './recipes.ts';
 import { assemblySteps, visibleLayers } from './assembly.ts';
 import { isRGB, resolveLight, type ResolvedLight } from './lighting.ts';
 import type {
@@ -21,6 +22,7 @@ export type FrameMember = { axis: 'x' | 'y'; length: number; x: number; y: numbe
 export type PartKind = 'stud' | 'standoff' | 'back' | 'returns' | 'leds' | 'face' | 'trim' | 'flat';
 export type LetterPart = {
   kind: PartKind;
+  regions?: Region[];
   layer: LayerId;
   material: string;
   z0: number;
@@ -479,9 +481,10 @@ export function computeLayout(design: DesignState): Layout {
       const groupShiftY = ng.axis === 'y' ? ng.dir * totalGroupShift : 0;
 
       const resolved = resolveParams(g.type, g);
-      const effDepth =
-        g.charDepth ??
-        (recipes[g.type].lit ? resolved.depth : (resolved.thickness ?? VINYL_THICKNESS));
+      const effDepth = panelIntegrated(g.type)
+        ? (resolved.projection ?? 0)
+        : (g.charDepth ??
+          (recipes[g.type].lit ? resolved.depth : (resolved.thickness ?? VINYL_THICKNESS)));
 
       layout.groupMetrics[gb.id] = {
         id: gb.id,
@@ -545,7 +548,7 @@ export function computeLayout(design: DesignState): Layout {
           holes: r.holes.map((h) => h.map(map)),
         })),
         m = recipe.materials;
-      if (typeof e.charDepth === 'number') {
+      if (!panelIntegrated(e.type) && typeof e.charDepth === 'number') {
         if (recipe.lit) params.depth = e.charDepth;
         else params.thickness = e.charDepth;
       } else if (typeof group?.charDepth === 'number' && !recipe.lit) {
@@ -558,7 +561,43 @@ export function computeLayout(design: DesignState): Layout {
         z += depth;
       };
       if (params.standoff > 0) add('standoff', 'mounting', params.standoff, m.standoff);
-      if (recipe.lit) {
+      if (panelIntegrated(e.type)) {
+        const rear = front - s.acp;
+        const overlap = expandRegions(regions, params.flange);
+        if (e.type === 'acpbacklit') {
+          parts.push({
+            kind: 'face',
+            layer: 'faces',
+            material: `${m.face} ${params.face} mm`,
+            z0: rear - params.recess - params.face,
+            z1: rear - params.recess,
+            regions: overlap,
+          });
+        } else {
+          parts.push({
+            kind: 'back',
+            layer: 'backs',
+            material: `${m.back} ${params.back} mm`,
+            z0: rear - params.back,
+            z1: rear,
+            regions: overlap,
+          });
+          parts.push({
+            kind: 'face',
+            layer: 'faces',
+            material: `${m.face} ${s.acp + (params.projection ?? 0)} mm`,
+            z0: rear,
+            z1: front + (params.projection ?? 0),
+          });
+        }
+        parts.push({
+          kind: 'leds',
+          layer: 'leds',
+          material: m.leds!,
+          z0: rear - params.ledSetback,
+          z1: rear - params.ledSetback + LED_SIZE.d,
+        });
+      } else if (recipe.lit) {
         add('back', 'backs', params.back, `${m.back} ${params.back} mm`);
         parts.push({
           kind: 'leds',
@@ -612,7 +651,7 @@ export function computeLayout(design: DesignState): Layout {
               LED_SIZE.h / 2 + 2,
             )
           : [],
-        fixings: e.type === 'vinyl' ? [] : fixings(regions),
+        fixings: e.type === 'vinyl' || panelIntegrated(e.type) ? [] : fixings(regions),
       };
       // Studs pass from the letter back through the fascia into the frame cavity.
       if (el.fixings.length) {
@@ -626,7 +665,7 @@ export function computeLayout(design: DesignState): Layout {
         });
       }
       layout.ledcount += el.leds.length;
-      if (recipe.lit) layout.returnLength += el.perimeter;
+      if (recipe.lit && !panelIntegrated(e.type)) layout.returnLength += el.perimeter;
       layout.elements.push(el);
     }
     // Update groupMetrics bounds from placed elements
@@ -643,6 +682,20 @@ export function computeLayout(design: DesignState): Layout {
     }
   }
   layout.power = planPower(layout, s);
+  const integrated = layout.elements.filter((e) => panelIntegrated(e.type));
+  if (integrated.length) {
+    layout.power.warnings.push(
+      'Panel cut-out counters need retained acrylic/bridges; check frame members, rear LED clearance and insert fixing before fabrication.',
+    );
+    if (s.backing > 0)
+      layout.power.warnings.push(
+        'An opaque front backing sheet blocks panel-integrated illumination. Remove it or provide matching openings.',
+      );
+    if (integrated.some((e) => e.parts.some((p) => p.z0 < -s.frame / 2)))
+      layout.power.warnings.push(
+        'An acrylic insert or LED lies behind the tray cavity. Reduce setback or increase frame depth.',
+      );
+  }
   cache.set(design, layout);
   return layout;
 }
@@ -680,7 +733,8 @@ export function planPower(L: Layout, s: DesignSettings): Power {
     const [px, py] = e.leds[0],
       psu = psus.length ? i % psus.length : 0,
       [qx, qy] = psus[psu] ?? [px, py],
-      back = e.parts.find((p) => p.kind === 'back')!.z0,
+      back =
+        e.parts.find((p) => p.kind === (panelIntegrated(e.type) ? 'leds' : 'back'))?.z0 ?? e.base,
       points: Point3[] = [
         [px, py, back],
         [px, py, 0],
