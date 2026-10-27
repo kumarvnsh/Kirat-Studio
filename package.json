@@ -11,12 +11,19 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@pdf-lib/fontkit": "1.1.1",
     "clipper-lib": "^6.4.2",
+    "fflate": "0.8.3",
     "makerjs": "^0.19.2",
+    "pdf-lib": "1.17.1",
     "postprocessing": "^6.39.5",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
-    "three": "^0.180.0"
+    "regenerator-runtime": "0.14.1",
+    "three": "^0.180.0",
+    "three-gpu-pathtracer": "0.0.24",
+    "three-mesh-bvh": "0.9.8",
+    "xatlas-web": "0.1.0"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",
