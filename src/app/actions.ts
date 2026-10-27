@@ -103,7 +103,7 @@ export async function openProject(text: string, note = 'Project opened.') {
   const a = p.design.artwork;
   source = a && a.origin !== 'vector' ? { image: await loadImage(a.imageData) } : null;
   setTrace({ ...(p.traceSettings ?? {}), crop: fullCrop });
-  loadDesign(p.design, note, p.fabrication);
+  loadDesign(p.design, [note, ...(p.warnings ?? [])].join(' '), p.fabrication, p.presentation);
 }
 
 export function projectText() {
@@ -112,6 +112,7 @@ export function projectText() {
   return serialise({
     design: s.design.present,
     fabrication: s.fabrication,
+    presentation: s.presentation,
     traceSettings: { background: t.background, threshold: t.threshold, minpixels: t.minpixels },
   });
 }
@@ -181,14 +182,17 @@ export function startSession() {
   if (previous) writeStore(BACKUP, previous);
   let last = getState().design.present,
     lastFab = getState().fabrication,
+    lastPresentation = getState().presentation,
     timer: ReturnType<typeof setTimeout>,
     warned = false;
   subscribe(() => {
     const d = getState().design.present,
-      f = getState().fabrication;
-    if (d === last && f === lastFab) return;
+      f = getState().fabrication,
+      p = getState().presentation;
+    if (d === last && f === lastFab && p === lastPresentation) return;
     last = d;
     lastFab = f;
+    lastPresentation = p;
     clearTimeout(timer);
     setSaveStatus(d.artwork ? 'saving' : 'idle');
     timer = setTimeout(() => {

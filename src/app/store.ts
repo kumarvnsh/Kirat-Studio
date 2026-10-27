@@ -11,8 +11,11 @@ import { defaultTrace, type TraceOptions } from '../artwork/import.ts';
 import { ALL_STEPS } from '../domain/assembly.ts';
 import { defaultFabrication } from '../fabrication/plan.ts';
 import { historyOf, record, undo as undoH, redo as redoH, type History } from '../editor/history.ts';
+import { defaultPresentation, type PresentationConfig } from '../presentation/model.ts';
 
 export type AppState = {
+  presentation: PresentationConfig;
+  projectGeneration: number;
   design: History<DesignState>; // design.present is the current design
   view: ViewState;
   fabrication: FabricationState;
@@ -22,6 +25,8 @@ export type AppState = {
 };
 
 let state: AppState = {
+  presentation: defaultPresentation(),
+  projectGeneration: 0,
   design: historyOf<DesignState>({ settings: defaultSettings(), artwork: null }),
   view: defaultView(),
   fabrication: defaultFabrication(),
@@ -77,16 +82,19 @@ export function editDesign(fn: (d: DesignState) => DesignState, message?: string
   });
 }
 // Load a whole design (open file, restore autosave): fresh history, fresh view.
-export function loadDesign(design: DesignState, message: string, fabrication = state.fabrication) {
+export function loadDesign(design: DesignState, message: string, fabrication = state.fabrication, presentation = defaultPresentation()) {
   lastCoalesce = null;
   set({
     ...state,
     design: historyOf(design),
+    presentation,
+    projectGeneration: state.projectGeneration + 1,
     fabrication,
     view: { ...defaultView(), selected: null, selectedGroup: '__board' },
     message,
   });
 }
+export function setPresentation(presentation: PresentationConfig) { set({ ...state, presentation }); }
 // Fabrication settings: saved with the project, not part of the design's undo history.
 export function setFabrication(fn: (f: FabricationState) => FabricationState) {
   set({ ...state, fabrication: fn(state.fabrication) });

@@ -15,32 +15,37 @@ import { autoGroup } from '../artwork/grouping.js';
 import { checkParams } from '../domain/recipes.ts';
 import { defaultFabrication } from '../fabrication/plan.ts';
 import { checkLight } from '../editor/artworkOps.ts';
+import { defaultPresentation, validatePresentation, type PresentationConfig } from '../presentation/model.ts';
 
 export const FORMAT = 'kirat-signage-studio';
-export const VERSION = 4;
+export const VERSION = 5;
 
 export type TraceSettings = { background: string; threshold: number; minpixels: number };
 export type ProjectFile = {
   design: DesignState;
   fabrication: FabricationState;
   traceSettings?: TraceSettings;
+  presentation?: PresentationConfig;
+  warnings?: string[];
 };
 
 export function serialise(p: ProjectFile): string {
-  return JSON.stringify({ format: FORMAT, version: VERSION, ...p, savedAt: new Date().toISOString() });
+  const { warnings, ...saved } = p;
+  return JSON.stringify({ format: FORMAT, version: VERSION, ...saved, presentation: p.presentation ?? defaultPresentation(), savedAt: new Date().toISOString() });
 }
 
 export function parseProject(text: string): ProjectFile {
   const raw = JSON.parse(text);
   if (raw?.format !== FORMAT) throw Error('Not a Kirat Studio project.');
   let design: DesignState;
-  if (raw.version === 4)
+  if (raw.version === 4 || raw.version === 5)
     design = raw.design && { ...raw.design, settings: { ...defaultSettings(), ...raw.design.settings } };
   else if (raw.version === 3) design = fromV3(raw.design);
   else if (raw.version === 1 || raw.version === 2) design = fromV3(fromFlatState(raw.state, raw.version));
   else throw Error('Unsupported project version ' + raw.version + '.');
   validateDesign(design);
-  return { design, fabrication: parseFabrication(raw.fabrication), traceSettings: raw.traceSettings };
+  const presentation = validatePresentation(raw.version === 5 ? raw.presentation : undefined);
+  return { design, fabrication: parseFabrication(raw.fabrication), traceSettings: raw.traceSettings, presentation: presentation.value, warnings: presentation.warnings };
 }
 
 // Fabrication settings: defaults for anything missing; out-of-range values rejected.
