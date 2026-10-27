@@ -1,7 +1,7 @@
 # Client renders and presentation booklet
 
 Date: 27 October 2026
-Status: design sections approved in chat; written specification awaiting user review.
+Status: design sections and written specification approved by the user on 27 October 2026.
 
 ## Objective and agreed choices
 
