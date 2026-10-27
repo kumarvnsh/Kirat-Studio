@@ -28,7 +28,9 @@ export function ExportDialog({
   const controller = useRef<AbortController | null>(null);
   useEffect(() => () => controller.current?.abort(), []);
   const issues = exportIssues(pages, assets, draft, keys);
-  const available = raw ? pages.some((p) => p.shotId) : pages.length > 0;
+  const available = raw
+    ? pages.some((p) => p.items.some((i) => i.kind === 'image'))
+    : pages.length > 0;
   async function run() {
     const c = new AbortController();
     controller.current = c;

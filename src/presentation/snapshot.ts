@@ -1,14 +1,20 @@
 import { sceneInput } from '../domain/layout.ts';
 import { defaultView, type DesignState } from '../domain/project.ts';
 import type { Shot } from './model.ts';
-export function createPresentationSnapshot(design: DesignState, shot: Shot) {
-  const copy = structuredClone(design),
+import { applyOption, type ProposalOption } from './options.ts';
+export function createPresentationSnapshot(
+  design: DesignState,
+  shot: Shot,
+  option?: ProposalOption,
+) {
+  const copy = applyOption(design, option),
     s = structuredClone(shot);
+  if (s.camera.preset === 'exploded') s.scene.kind = 'studio';
   const input = sceneInput(copy, {
     ...defaultView(),
     mode: '3d',
     step: 99,
-    explode: 0,
+    explode: s.camera.preset === 'exploded' ? 85 : 0,
     hidden: [],
     isolate: false,
     selection: [],

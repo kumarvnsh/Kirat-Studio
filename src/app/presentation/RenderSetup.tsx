@@ -23,7 +23,8 @@ export function RenderSetup({
       <label>
         Setting
         <select
-          value={shot.scene.kind}
+          value={shot.camera.preset === 'exploded' ? 'studio' : shot.scene.kind}
+          disabled={shot.camera.preset === 'exploded'}
           onChange={(e) =>
             onChange({
               scene: {
@@ -40,7 +41,7 @@ export function RenderSetup({
           ))}
         </select>
       </label>
-      {shot.scene.kind !== 'studio' && (
+      {shot.scene.kind !== 'studio' && shot.camera.preset !== 'exploded' && (
         <>
           <label>
             Wall finish
@@ -86,6 +87,9 @@ export function RenderSetup({
           onChange={(e) =>
             onChange({
               camera: { preset: e.target.value as Shot['camera']['preset'] },
+              ...(e.target.value === 'exploded'
+                ? { power: false, scene: { ...shot.scene, kind: 'studio' as const } }
+                : {}),
             })
           }
         >

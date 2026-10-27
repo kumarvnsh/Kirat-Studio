@@ -112,3 +112,7 @@ Module quantity/layout, supply voltage, circuits, connected load, PSU selection 
 ## Digital signage
 
 Stage 1 simulator: LCD and modular LED, dimensions/bezel/cabinets, resolution and scaling, pixel pitch, playlists, brightness/viewing distance, mounting assemblies. Stage 2 cloud CMS + player (media, playlists, schedules, screen groups, users, revisions, playback records; player caching, health, recovery). Keep the CMS a separate module.
+
+### Client booklet extension — 27 October 2026
+
+Named construction/colour options, visual comparison pages, labelled exploded views and Kirat Creations proposal branding are implemented. Project format v6 retains older project migration. See `client-booklet-verification.md` for checks and limits.

@@ -2,6 +2,31 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { layoutBooklet, fitRect } from '../src/presentation/pageLayout.ts';
 import { defaultPresentation } from '../src/presentation/model.ts';
+import { duplicateOption } from '../src/presentation/options.ts';
+test('comparison pages show one representative image and effective materials per option', () => {
+  const c = duplicateOption(defaultPresentation(), 'current', 'b');
+  c.options[1].groupOverrides.g = { type: 'halo', faceColor: '#aa5500' };
+  c.pages = [
+    {
+      id: 'compare',
+      kind: 'comparison',
+      caption: 'Your options',
+      included: true,
+      dimensions: false,
+      materials: false,
+    },
+  ];
+  const p = layoutBooklet(c, presentationFixture('front'), measure, 'mm');
+  assert.equal(p[0].items.filter((i) => i.kind === 'image').length, 2);
+  assert.ok(p.flatMap((p) => p.items).some((i) => i.kind === 'text' && i.text.includes('Halo')));
+  assert.ok(p[0].items.some((i) => i.kind === 'logo' && i.data === '/brand/kirat-creations.png'));
+  c.pages[0].optionIds = ['b'];
+  const selected = layoutBooklet(c, presentationFixture('front'), measure, 'mm');
+  assert.deepEqual(
+    selected[0].items.filter((i) => i.kind === 'image').map((i) => i.shotId),
+    ['b-shot-2'],
+  );
+});
 import { presentationFixture } from './fixtures/presentation.ts';
 const measure = (s: string, size: number) => [...s].length * size * 0.55;
 test('booklet follows inclusion/order and never clips text', () => {

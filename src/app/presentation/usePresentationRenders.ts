@@ -48,7 +48,18 @@ export function usePresentationRenders() {
     setHashing(true);
     (async () => {
       const pairs = await Promise.all(
-        config.shots.map(async (s) => [s.id, await shotFingerprint(design, s)] as const),
+        config.shots.map(
+          async (s) =>
+            [
+              s.id,
+              await shotFingerprint(
+                design,
+                s,
+                undefined,
+                config.options.find((o) => o.id === s.optionId),
+              ),
+            ] as const,
+        ),
       );
       if (!live) return;
       setKeys(Object.fromEntries(pairs));
@@ -79,7 +90,7 @@ export function usePresentationRenders() {
     return () => {
       live = false;
     };
-  }, [design, config.shots, generation]);
+  }, [design, config.shots, config.options, generation]);
   async function render(shots: Shot[], quality: 'preview' | 'final') {
     if (operation.current) return;
     const controller = new AbortController();
@@ -87,7 +98,13 @@ export function usePresentationRenders() {
     setBusy(true);
     setErrors({});
     setWarning('');
-    const snapshots = shots.map((s) => createPresentationSnapshot(design, s));
+    const snapshots = shots.map((s) =>
+      createPresentationSnapshot(
+        design,
+        s,
+        config.options.find((o) => o.id === s.optionId),
+      ),
+    );
     try {
       const jobs = await Promise.all(
         snapshots.map(async (snapshot) => ({

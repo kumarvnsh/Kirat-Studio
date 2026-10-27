@@ -19,7 +19,7 @@ export async function pdfExport(
 ) {
   const doc = await PDFDocument.create();
   doc.setTitle('Sign proposal');
-  doc.setCreator('Kirat Studio');
+  doc.setCreator('Kirat Creations');
   const embedded = new Map<string, Awaited<ReturnType<typeof doc.embedPng>>>();
   for (let index = 0; index < pages.length; index++) {
     signal.throwIfAborted();

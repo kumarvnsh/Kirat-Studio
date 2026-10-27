@@ -1,4 +1,4 @@
-// Project file format. v5 adds presentation configuration separate from design and fabrication.
+// v6 adds independent proposal options; v5 added presentation separate from design and fabrication.
 // v3 had board-wide letter dimensions; v4 keeps them per group as recipe params.
 // v1/v2 (prototype) files store one flat `state` object. Older files are migrated on open.
 import {
@@ -15,10 +15,14 @@ import { autoGroup } from '../artwork/grouping.js';
 import { checkParams } from '../domain/recipes.ts';
 import { defaultFabrication } from '../fabrication/plan.ts';
 import { checkLight } from '../editor/artworkOps.ts';
-import { defaultPresentation, validatePresentation, type PresentationConfig } from '../presentation/model.ts';
+import {
+  defaultPresentation,
+  validatePresentation,
+  type PresentationConfig,
+} from '../presentation/model.ts';
 
 export const FORMAT = 'kirat-signage-studio';
-export const VERSION = 5;
+export const VERSION = 6;
 
 export type TraceSettings = { background: string; threshold: number; minpixels: number };
 export type ProjectFile = {
@@ -31,21 +35,37 @@ export type ProjectFile = {
 
 export function serialise(p: ProjectFile): string {
   const { warnings, ...saved } = p;
-  return JSON.stringify({ format: FORMAT, version: VERSION, ...saved, presentation: p.presentation ?? defaultPresentation(), savedAt: new Date().toISOString() });
+  return JSON.stringify({
+    format: FORMAT,
+    version: VERSION,
+    ...saved,
+    presentation: p.presentation ?? defaultPresentation(),
+    savedAt: new Date().toISOString(),
+  });
 }
 
 export function parseProject(text: string): ProjectFile {
   const raw = JSON.parse(text);
   if (raw?.format !== FORMAT) throw Error('Not a Kirat Studio project.');
   let design: DesignState;
-  if (raw.version === 4 || raw.version === 5)
-    design = raw.design && { ...raw.design, settings: { ...defaultSettings(), ...raw.design.settings } };
+  if (raw.version === 4 || raw.version === 5 || raw.version === 6)
+    design = raw.design && {
+      ...raw.design,
+      settings: { ...defaultSettings(), ...raw.design.settings },
+    };
   else if (raw.version === 3) design = fromV3(raw.design);
-  else if (raw.version === 1 || raw.version === 2) design = fromV3(fromFlatState(raw.state, raw.version));
+  else if (raw.version === 1 || raw.version === 2)
+    design = fromV3(fromFlatState(raw.state, raw.version));
   else throw Error('Unsupported project version ' + raw.version + '.');
   validateDesign(design);
-  const presentation = validatePresentation(raw.version === 5 ? raw.presentation : undefined);
-  return { design, fabrication: parseFabrication(raw.fabrication), traceSettings: raw.traceSettings, presentation: presentation.value, warnings: presentation.warnings };
+  const presentation = validatePresentation(raw.version >= 5 ? raw.presentation : undefined);
+  return {
+    design,
+    fabrication: parseFabrication(raw.fabrication),
+    traceSettings: raw.traceSettings,
+    presentation: presentation.value,
+    warnings: presentation.warnings,
+  };
 }
 
 // Fabrication settings: defaults for anything missing; out-of-range values rejected.
@@ -126,7 +146,8 @@ function fromFlatState(s: any, version: 1 | 2): any {
 const finite = (n: unknown, lo: number, hi: number) =>
   typeof n === 'number' && Number.isFinite(n) && n >= lo && n <= hi;
 const isType = (t: unknown) => typeof t === 'string' && Object.hasOwn(constructionNames, t);
-const optColour = (c: unknown) => c === undefined || (typeof c === 'string' && /^#[0-9a-f]{6}$/i.test(c));
+const optColour = (c: unknown) =>
+  c === undefined || (typeof c === 'string' && /^#[0-9a-f]{6}$/i.test(c));
 const isId = (id: unknown) => typeof id === 'string' && /^[\w-]{1,60}$/.test(id);
 
 export function validateDesign(d: DesignState) {
@@ -135,7 +156,10 @@ export function validateDesign(d: DesignState) {
     if (typeof (d.settings as any)[k] !== 'number') throw Error('Invalid ' + k + '.');
   const bad = checkSettings(d.settings);
   if (bad) throw Error(bad);
-  if (!/^#[0-9a-f]{6}$/i.test(d.settings.boardcolor) || !/^#[0-9a-f]{6}$/i.test(d.settings.facecolor))
+  if (
+    !/^#[0-9a-f]{6}$/i.test(d.settings.boardcolor) ||
+    !/^#[0-9a-f]{6}$/i.test(d.settings.facecolor)
+  )
     throw Error('Invalid colour.');
   if (d.artwork) validateArtwork(d.artwork);
 }
@@ -172,7 +196,9 @@ function validateArtwork(a: Artwork) {
       !optColour(g.returnColor) ||
       (g.light !== undefined && (typeof g.light !== 'object' || checkLight(g.light) !== null))
     )
-      throw Error('Invalid artwork group' + (g.params ? ': ' + checkParams(g.type, g.params) : '.'));
+      throw Error(
+        'Invalid artwork group' + (g.params ? ': ' + checkParams(g.type, g.params) : '.'),
+      );
   if (!Array.isArray(a.elements) || a.elements.length > 100)
     throw Error('Project exceeds the 100-shape limit.');
   let points = 0;
@@ -182,12 +208,17 @@ function validateArtwork(a: Artwork) {
       !isType(e.type) ||
       !/^#[0-9a-f]{6}$/i.test(e.color) ||
       !optColour(e.faceColor) ||
+      (e.returnColor !== null && !optColour(e.returnColor)) ||
       typeof e.name !== 'string'
     )
       throw Error('Invalid element data.');
     if (!a.groups.some((g) => g.id === e.group) || typeof e.override !== 'boolean')
       throw Error('Invalid element group.');
-    if (!Array.isArray(e.bounds) || e.bounds.length !== 4 || e.bounds.some((n) => !finite(n, 0, 2000)))
+    if (
+      !Array.isArray(e.bounds) ||
+      e.bounds.length !== 4 ||
+      e.bounds.some((n) => !finite(n, 0, 2000))
+    )
       throw Error('Invalid element bounds.');
     if (!Array.isArray(e.regions) || e.regions.length > 100) throw Error('Invalid contours.');
     for (const r of e.regions) {
@@ -197,7 +228,9 @@ function validateArtwork(a: Artwork) {
         if (
           loop.length < 3 ||
           loop.length > 10000 ||
-          loop.some((v) => !Array.isArray(v) || v.length !== 2 || v.some((n) => !finite(n, -10000, 10000)))
+          loop.some(
+            (v) => !Array.isArray(v) || v.length !== 2 || v.some((n) => !finite(n, -10000, 10000)),
+          )
         )
           throw Error('Invalid contour points.');
       }

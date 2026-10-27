@@ -7,13 +7,13 @@ import {
 } from '../src/presentation/model.ts';
 import { shotFingerprint } from '../src/presentation/fingerprints.ts';
 import { presentationFixture } from './fixtures/presentation.ts';
-test('default booklet has paired installed views and both top cameras', () => {
+test('default booklet has paired installed views and exploded and elevated cameras', () => {
   const c = defaultPresentation();
   assert.deepEqual(
     c.shots.slice(0, 2).map((s) => s.environment),
     ['day', 'night'],
   );
-  assert.ok(c.shots.some((s) => s.camera.preset === 'top'));
+  assert.ok(c.shots.some((s) => s.camera.preset === 'exploded'));
   assert.ok(c.shots.some((s) => s.camera.preset === 'elevated'));
   assert.deepEqual(validatePresentation(c).value, c);
 });

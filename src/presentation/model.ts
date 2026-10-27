@@ -1,8 +1,11 @@
+import { originalOption, type ProposalOption } from './options.ts';
+import { constructionNames } from '../domain/project.ts';
 export type CameraPreset =
   | 'front'
   | 'left'
   | 'right'
   | 'top'
+  | 'exploded'
   | 'elevated'
   | 'threeQuarter'
   | 'custom';
@@ -20,6 +23,7 @@ export type PresentationScene = {
 export type Shot = {
   id: string;
   name: string;
+  optionId: string;
   scene: PresentationScene;
   camera: ShotCamera;
   pairId?: string;
@@ -32,14 +36,16 @@ export type Shot = {
 };
 export type BookletPage = {
   id: string;
-  kind: 'cover' | 'render' | 'summary';
+  kind: 'cover' | 'render' | 'summary' | 'comparison';
   included: boolean;
   shotId?: string;
+  optionIds?: string[];
   caption: string;
   dimensions: boolean;
   materials: boolean;
 };
 export type PresentationConfig = {
+  options: ProposalOption[];
   shots: Shot[];
   pages: BookletPage[];
   metadata: {
@@ -56,6 +62,7 @@ export const cameraNames: Record<CameraPreset, string> = {
   left: 'Left side',
   right: 'Right side',
   top: 'Technical top',
+  exploded: 'Exploded construction',
   elevated: 'Elevated 3D',
   threeQuarter: '3D perspective',
   custom: 'Custom camera',
@@ -72,17 +79,18 @@ export function defaultPresentation(): PresentationConfig {
     ['installed-night', 'Installed · Night', 'threeQuarter', 'night', 'shopfront'],
     ['front', 'Front', 'front', 'day', 'studio'],
     ['side', 'Side', 'right', 'day', 'studio'],
-    ['top', 'Technical top', 'top', 'day', 'studio'],
+    ['exploded', 'Exploded construction', 'exploded', 'day', 'studio'],
     ['elevated', 'Elevated 3D', 'elevated', 'day', 'studio'],
     ['perspective', '3D perspective', 'threeQuarter', 'day', 'studio'],
   ];
   const shots: Shot[] = definitions.map(([id, name, preset, environment, kind]) => ({
     id,
     name,
+    optionId: 'current',
     camera: { preset },
     scene: { kind, wallFinish: 'plaster', groundFinish: 'paving' },
     environment,
-    power: true,
+    power: preset !== 'exploded',
     dimming: 1,
     exposureEV: 0,
     width: 2400,
@@ -90,6 +98,7 @@ export function defaultPresentation(): PresentationConfig {
     ...(id.startsWith('installed') ? { pairId: 'installed' } : {}),
   }));
   return {
+    options: [originalOption()],
     shots,
     pages: shots.map((s) => ({
       id: `page-${s.id}`,
@@ -120,7 +129,7 @@ export function updateShot(
     shots: config.shots.map((s) =>
       s.id === id
         ? { ...s, ...patch }
-        : source?.pairId && s.pairId === source.pairId
+        : source?.pairId && s.pairId === source.pairId && s.optionId === source.optionId
           ? {
               ...s,
               ...(patch.camera ? { camera: patch.camera } : {}),
@@ -140,7 +149,46 @@ export function validatePresentation(raw: unknown): {
 } {
   if (raw === undefined) return { value: defaultPresentation(), warnings: [] };
   try {
-    const c = raw as PresentationConfig;
+    const c = structuredClone(raw) as PresentationConfig;
+    const legacy = !c.options;
+    c.options ??= [originalOption()];
+    if (!Array.isArray(c.options) || !c.options.length || c.options.length > 12) throw Error();
+    const optionIds = new Set<string>();
+    const validColour = (v: unknown) => typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v);
+    for (const o of c.options) {
+      if (
+        !o ||
+        !text(o.id, 100) ||
+        !o.id ||
+        optionIds.has(o.id) ||
+        !text(o.name, 200) ||
+        !text(o.description, 2000) ||
+        (o.boardColor !== undefined && !validColour(o.boardColor))
+      )
+        throw Error();
+      optionIds.add(o.id);
+      for (const overrides of [o.groupOverrides, o.elementOverrides]) {
+        if (
+          !overrides ||
+          typeof overrides !== 'object' ||
+          Array.isArray(overrides) ||
+          Object.keys(overrides).length > 100
+        )
+          throw Error();
+        for (const [id, p] of Object.entries(overrides))
+          if (
+            !id ||
+            id.length > 100 ||
+            !p ||
+            typeof p !== 'object' ||
+            (p.type !== undefined && !Object.hasOwn(constructionNames, p.type)) ||
+            [p.faceColor, p.returnColor].some(
+              (v) => v !== undefined && v !== null && !validColour(v),
+            )
+          )
+            throw Error();
+      }
+    }
     if (
       !c ||
       !Array.isArray(c.shots) ||
@@ -152,6 +200,16 @@ export function validatePresentation(raw: unknown): {
     const ids = new Set<string>(),
       pages = new Set<string>();
     for (const s of c.shots) {
+      s.optionId ??= 'current';
+      if (!optionIds.has(s.optionId)) throw Error();
+      if (legacy && s.id === 'top' && s.camera?.preset === 'top') {
+        s.camera.preset = 'exploded';
+        s.name = 'Exploded construction';
+        s.power = false;
+        for (const p of c.pages)
+          if (p.shotId === s.id && p.caption === 'Technical top')
+            p.caption = 'Exploded construction';
+      }
       if (!s || !text(s.id, 100) || !s.id || ids.has(s.id) || !text(s.name, 200)) throw Error();
       ids.add(s.id);
       if (
@@ -190,10 +248,14 @@ export function validatePresentation(raw: unknown): {
         !text(p.id, 100) ||
         !p.id ||
         pages.has(p.id) ||
-        !['cover', 'render', 'summary'].includes(p.kind) ||
+        !['cover', 'render', 'summary', 'comparison'].includes(p.kind) ||
         !text(p.caption, 500) ||
         ![p.included, p.dimensions, p.materials].every((v) => typeof v === 'boolean') ||
-        (p.kind === 'render' && !ids.has(p.shotId!))
+        (p.kind === 'render' && !ids.has(p.shotId!)) ||
+        (p.optionIds !== undefined &&
+          (!Array.isArray(p.optionIds) ||
+            p.optionIds.length > 12 ||
+            p.optionIds.some((id) => !optionIds.has(id))))
       )
         throw Error();
       pages.add(p.id);
@@ -218,7 +280,8 @@ export function validatePresentation(raw: unknown): {
     const pairs = new Map<string, Shot>();
     for (const s of c.shots)
       if (s.pairId) {
-        const other = pairs.get(s.pairId);
+        const pairKey = `${s.optionId}:${s.pairId}`;
+        const other = pairs.get(pairKey);
         if (
           other &&
           (JSON.stringify(other.camera) !== JSON.stringify(s.camera) ||
@@ -226,7 +289,7 @@ export function validatePresentation(raw: unknown): {
             other.aspect !== s.aspect)
         )
           throw Error();
-        pairs.set(s.pairId, s);
+        pairs.set(pairKey, s);
       }
     return { value: structuredClone(c), warnings: [] };
   } catch {

@@ -13,6 +13,16 @@ export async function imageExport(
   signal: AbortSignal,
   onProgress: (n: number) => void,
 ) {
+  if (raw) {
+    const seen = new Set<string>();
+    pages = pages.flatMap((p) =>
+      p.items.flatMap((i) => {
+        if (i.kind !== 'image' || seen.has(i.shotId)) return [];
+        seen.add(i.shotId);
+        return [{ ...p, id: i.shotId, shotId: i.shotId, title: `${p.title} ${i.shotId}` }];
+      }),
+    );
+  }
   const chunks: Uint8Array<ArrayBuffer>[] = [];
   let failure: Error | undefined;
   const zip = new Zip((err, data) => {

@@ -15,6 +15,7 @@ export function presentationCamera(
     top: [0, 1, 0],
     elevated: [0.32, 0.8, 1],
     threeQuarter: [0.5, 0.22, 1],
+    exploded: [1, 0.42, 1],
     custom: [0.5, 0.22, 1],
   };
   const direction = new T.Vector3(...directions[shot.preset]).normalize();
@@ -48,7 +49,7 @@ export function presentationCamera(
             p.dot(direction) +
             Math.max(Math.abs(p.dot(vertical)) / tan, Math.abs(p.dot(right)) / (tan * aspect)),
         ),
-      ) * 1.12;
+      ) * (shot.preset === 'exploded' ? 1.65 : 1.12);
     camera = new T.PerspectiveCamera(35, aspect, 0.001, distance + radius * 3);
   }
   camera.up.copy(up);

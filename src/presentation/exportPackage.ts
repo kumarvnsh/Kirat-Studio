@@ -13,15 +13,13 @@ export function exportIssues(
 ): string[] {
   if (!pages.length) return ['Include at least one booklet page.'];
   return pages.flatMap((p) =>
-    p.shotId && !assets[p.shotId]
-      ? [`${p.title}: render an image first.`]
-      : p.shotId &&
-          !draft &&
-          (assets[p.shotId].quality !== 'final' ||
-            !keys[p.shotId] ||
-            assets[p.shotId].key !== keys[p.shotId])
-        ? [`${p.title}: a current final render is required.`]
-        : [],
+    [...new Set(p.items.flatMap((i) => (i.kind === 'image' ? [i.shotId] : [])))].flatMap((id) =>
+      !assets[id]
+        ? [`${p.title}: render an image first.`]
+        : !draft && (assets[id].quality !== 'final' || !keys[id] || assets[id].key !== keys[id])
+          ? [`${p.title}: a current final render is required.`]
+          : [],
+    ),
   );
 }
 export function fileName(index: number, title: string, extension: string) {

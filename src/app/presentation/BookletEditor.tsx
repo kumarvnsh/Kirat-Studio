@@ -24,7 +24,7 @@ export function BookletEditor({
     onChange({ ...config, pages });
   };
   const page = config.pages.find((p) => p.id === selected);
-  const add = (kind: 'cover' | 'summary') => {
+  const add = (kind: 'cover' | 'summary' | 'comparison') => {
     const id = crypto.randomUUID();
     onChange({
       ...config,
@@ -34,7 +34,12 @@ export function BookletEditor({
           id,
           kind,
           included: true,
-          caption: kind === 'cover' ? 'Cover' : 'Materials & notes',
+          caption:
+            kind === 'cover'
+              ? 'Cover'
+              : kind === 'comparison'
+                ? 'Construction & colour options'
+                : 'Materials & notes',
           dimensions: false,
           materials: false,
         },
@@ -60,6 +65,9 @@ export function BookletEditor({
             />
             <button onClick={() => onSelect(p.id)}>
               <small>{String(i + 1).padStart(2, '0')}</small>
+              {p.shotId
+                ? `${config.options.find((o) => o.id === config.shots.find((s) => s.id === p.shotId)?.optionId)?.name ?? ''} · `
+                : ''}
               {p.caption || p.kind}
             </button>
             <button
@@ -80,6 +88,9 @@ export function BookletEditor({
         ))}
       </div>
       <div className="booklet-buttons">
+        <button onClick={() => add('comparison')} disabled={config.pages.length >= 100}>
+          ＋ Compare options
+        </button>
         <button onClick={() => add('cover')} disabled={config.pages.length >= 100}>
           ＋ Cover
         </button>
@@ -98,6 +109,24 @@ export function BookletEditor({
               onChange={(e) => patch(page.id, { caption: e.target.value })}
             />
           </label>
+          {page.kind === 'comparison' &&
+            config.options.map((o) => (
+              <label className="booklet-check" key={o.id}>
+                <input
+                  type="checkbox"
+                  checked={!page.optionIds || page.optionIds.includes(o.id)}
+                  onChange={(e) => {
+                    const selected = page.optionIds ?? config.options.map((o) => o.id);
+                    patch(page.id, {
+                      optionIds: e.target.checked
+                        ? [...selected, o.id]
+                        : selected.filter((id) => id !== o.id),
+                    });
+                  }}
+                />
+                Compare {o.name}
+              </label>
+            ))}
           {page.kind === 'render' && (
             <>
               <label>

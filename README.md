@@ -30,7 +30,7 @@ Requires Node 20+.
 | `src/fabrication/` | Return-strip bend schedules (`bending.ts`), tool compensation and cut checks (`cutting.ts`), fabrication plan + CSV (`plan.ts`), DXF via maker.js (`dxf.ts`) |
 | `src/editor/history.ts` | Immutable undo/redo over designs |
 | `src/editor/artworkOps.ts` | Structure edits: rename, create / move / merge / delete / reorder groups, constructions and colours |
-| `src/storage/project.ts` | Project file format v5, v1–v4 migration, validation, browser autosave |
+| `src/storage/project.ts` | Project file format v6, v1–v5 migration, validation, browser autosave |
 | `src/presentation/` | Repeatable cameras, progressive final rendering, render queue, shared booklet layout, PDF and image exports |
 | `src/app/presentation/` | Prepare renders → Build booklet → Export client workspace |
 | `src/scene/scene.ts` | Three.js display of the layout (mm → m); HDR pipeline via pmndrs/postprocessing: exposure → bloom → AgX tone mapping; PBR finishes; stills |
@@ -67,10 +67,12 @@ Milestone D (customer-ready visuals) done for presentation level:
 - Emission never depends on time of day. Daylight is modelled as much brighter than an LED face and the camera exposes for it, so lit faces read as lit-but-subtle by day and glow at night.
 - HDR rendering with pmndrs/postprocessing: exposure, then bloom with a luminance threshold above 1 (only emissive parts bloom: faces, halo light, LED lenses), then AgX tone mapping so saturated faces keep their colour.
 - PBR finishes: clear-coated ACP, zinc GI, primed MS frame, aluminium returns, stainless halo faces, glossy cast acrylic, matte vinyl.
-- Client booklet: choose installed/studio views, day/night/dusk, orthographic front/side/top and elevated/3D cameras; include, reorder or remove pages, branding, project details, dimensions, materials and notes.
+- Client booklet: choose installed/studio views, day/night/dusk, front/side, labelled exploded construction and elevated/3D cameras (technical top remains available); include, reorder or remove pages, branding, project details, dimensions, materials and notes.
+- Named alternatives within one proposal: independent group/letter construction, face/return and fascia colours, option explanations, and selectable visual comparison pages. The editor design stays unchanged.
+- Proposal pages use the supplied Kirat Creations logo by default; branding and other page content can be omitted. Exploded views label actual model layers; LED/power placement remains schematic.
 - Fast raster previews and a separate progressive path-traced final render (512 samples; 2400 or 3840 px). Final capture preserves physical layout, adds actual rear-light spill and uses independent environment illumination and sign power. Render progress, cancellation, retry and outdated-image status are explicit.
 - Export an A4 landscape vector PDF, composed PNG/JPG pages (3508 × 2480), or individual render images. Image batches download as ZIPs. Final exports require current final images; draft export is explicit and marked.
-- Presentation configuration is saved separately in project v5. Full images are cached in this browser, outside JSON; opening a project on another device requires rerendering. Cache errors retain in-memory results for export. PDF lettering is vector outlines to preserve Latin/Devanagari shaping consistently; it is not searchable text.
+- Presentation configuration is saved separately in project v6. Full images are cached in this browser, outside JSON; opening a project on another device requires rerendering. Cache errors retain in-memory results for export. PDF lettering is vector outlines to preserve Latin/Devanagari shaping consistently; it is not searchable text.
 - Not done: a *calibrated* preview compared against photographs of a real sample (needs measurements), site-photo placement or cloud render services. Built-in surroundings remain curated 3D scenes, not photographs.
 
 Milestone E (fabrication preview) done at geometric level:

@@ -44,6 +44,7 @@ export type ArtworkElement = {
   bounds: [number, number, number, number]; // traced image pixels, y down
   color: string; // average colour of the artwork (traced / SVG fill)
   faceColor?: string; // chosen face colour; overrides the group's
+  returnColor?: string | null; // null = bare metal; otherwise overrides the group's
   charHeight?: number; // per-character height override (mm)
   charWidth?: number; // per-character width override (mm)
   charDepth?: number; // per-character 3D depth / thickness override (mm)
@@ -72,7 +73,13 @@ export type ArtworkGroup = {
 //   rgb     — RGB LEDs set to `color`
 //   artwork — RGB LEDs matching each letter's own colour
 export type LightMode = 'white' | 'rgb' | 'artwork';
-export type GroupLight = { mode?: LightMode; temp?: number; color?: string; dimming?: number; on?: boolean };
+export type GroupLight = {
+  mode?: LightMode;
+  temp?: number;
+  color?: string;
+  dimming?: number;
+  on?: boolean;
+};
 
 export type Artwork = {
   elements: ArtworkElement[];
@@ -95,7 +102,14 @@ export const numericSettings = {
   frame: { label: 'Frame section', min: 20, max: 100, step: 1, value: 40 },
   framewall: { label: 'Frame wall', min: 1, max: 5, step: 0.5, value: 2 },
   backing: { label: 'Front backing sheet (0 = none)', min: 0, max: 6, step: 0.5, value: 0 },
-  ledTemp: { label: 'LED colour temperature', min: 2000, max: 10000, step: 100, value: 6500, unit: 'K' },
+  ledTemp: {
+    label: 'LED colour temperature',
+    min: 2000,
+    max: 10000,
+    step: 100,
+    value: 6500,
+    unit: 'K',
+  },
 } as const;
 export type NumericKey = keyof typeof numericSettings;
 
@@ -137,7 +151,12 @@ export type { FabricationState } from '../fabrication/plan.ts';
 
 // Assembly layers, rear to front. Index = assembly step - 1.
 export const LAYERS = [
-  { id: 'gi', name: 'GI rear cover', kind: 'board', note: 'GI sheet closes the rear of the steel frame.' },
+  {
+    id: 'gi',
+    name: 'GI rear cover',
+    kind: 'board',
+    note: 'GI sheet closes the rear of the steel frame.',
+  },
   {
     id: 'frame',
     name: 'MS frame',
@@ -197,10 +216,9 @@ export type LayerId = (typeof LAYERS)[number]['id'];
 export const LAYER_COUNT = LAYERS.length;
 
 export function defaultSettings(): DesignSettings {
-  const s = Object.fromEntries(Object.entries(numericSettings).map(([k, v]) => [k, v.value])) as Record<
-    NumericKey,
-    number
-  >;
+  const s = Object.fromEntries(
+    Object.entries(numericSettings).map(([k, v]) => [k, v.value]),
+  ) as Record<NumericKey, number>;
   return { ...s, boardcolor: '#243843', facecolor: '#ff9e35', keepart: true };
 }
 
@@ -236,7 +254,10 @@ export function checkSettings(s: DesignSettings): string | null {
       return `${r.label} must be between ${r.min} and ${r.max} ${'unit' in r ? r.unit : 'mm'}.`;
   }
   if (s.framewall * 2 >= s.frame) return 'Frame wall must be less than half the frame section.';
-  if (s.groupSpacing !== undefined && (!Number.isFinite(s.groupSpacing) || s.groupSpacing < -1000 || s.groupSpacing > 3000))
+  if (
+    s.groupSpacing !== undefined &&
+    (!Number.isFinite(s.groupSpacing) || s.groupSpacing < -1000 || s.groupSpacing > 3000)
+  )
     return 'Space between groups must be between -1000 and 3000 mm.';
   return null;
 }

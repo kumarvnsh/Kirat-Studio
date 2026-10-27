@@ -2,6 +2,7 @@ import { computeLayout } from '../domain/layout.ts';
 import { constructionNames, type DesignState } from '../domain/project.ts';
 import { formatInUnit, type LengthUnit } from '../domain/units.ts';
 import type { PresentationConfig } from './model.ts';
+import { applyOption } from './options.ts';
 export type Rect = { x: number; y: number; w: number; h: number };
 export type PageItem = (
   | { kind: 'text'; text: string; size: number; color: string; opacity?: number }
@@ -103,31 +104,24 @@ export function layoutBooklet(
     return y;
   };
   const header = (id: string, title: string): { page: LayoutPage; y: number } => {
+    if (pages.length >= 200)
+      throw Error('This booklet is too long. Reduce included details or design options.');
     const page: LayoutPage = { id, title, items: [] };
     pages.push(page);
     let y = 12;
     if (config.include.branding) {
-      if (config.metadata.logoData)
-        page.items.push({
-          kind: 'logo',
-          data: config.metadata.logoData,
-          x: 248,
-          y: 10,
-          w: 37,
-          h: 14,
-        });
-      else text(page.items, 'KIRAT STUDIO', 12, y, 2.6);
-      y += 9;
+      page.items.push({
+        kind: 'logo',
+        data: config.metadata.logoData ?? '/brand/kirat-creations.png',
+        x: 12,
+        y: 10,
+        w: 72,
+        h: 24,
+      });
+      y = 38;
     }
     if (config.include.projectInfo) {
-      y = text(
-        page.items,
-        config.metadata.project || 'Sign proposal',
-        12,
-        y,
-        5.8,
-        config.metadata.logoData ? 230 : 273,
-      );
+      y = text(page.items, config.metadata.project || 'Sign proposal', 12, y, 5.8, 273);
       if (config.metadata.client) y = text(page.items, config.metadata.client, 12, y, 3);
       if (config.metadata.revision)
         y = text(page.items, `Revision ${config.metadata.revision}`, 12, y, 2.5);
@@ -155,6 +149,53 @@ export function layoutBooklet(
     }
   };
   for (const source of config.pages.filter((p) => p.included)) {
+    if (source.kind === 'comparison') {
+      const options = config.options.filter(
+        (o) => !source.optionIds || source.optionIds.includes(o.id),
+      );
+      for (let start = 0; start < options.length; start += 2) {
+        const state = header(
+            `${source.id}-${start}`,
+            source.caption || 'Construction & colour options',
+          ),
+          overflow: { name: string; lines: string[] }[] = [];
+        options.slice(start, start + 2).forEach((o, column) => {
+          const x = 12 + column * 141,
+            w = 132;
+          let y = text(state.page.items, o.name, x, state.y, 3.6, w);
+          const representative =
+            config.shots.find(
+              (s) => s.optionId === o.id && s.camera.preset === 'front' && s.environment === 'day',
+            ) ?? config.shots.find((s) => s.optionId === o.id);
+          if (representative) {
+            state.page.items.push({
+              kind: 'image',
+              shotId: representative.id,
+              ...fitRect(representative.aspect, { x, y: y + 3, w, h: 49 }),
+            });
+            y += 56;
+          }
+          const lines = [
+            ...(o.description ? wrapText(o.description, 2.7, w, measure) : []),
+            ...materialSummary(applyOption(design, o)).flatMap((s) => wrapText(s, 2.7, w, measure)),
+          ];
+          let used = 0;
+          for (const line of lines) {
+            if (y > 184) break;
+            y = text(state.page.items, line, x, y, 2.7, w);
+            used++;
+          }
+          if (used < lines.length) overflow.push({ name: o.name, lines: lines.slice(used) });
+        });
+        for (const detail of overflow)
+          appendTextPages(
+            `${source.id}-${start}-${detail.name}`,
+            `${detail.name} · details`,
+            detail.lines,
+          );
+      }
+      continue;
+    }
     if (source.kind === 'cover') {
       const state = header(source.id, 'Sign concept');
       state.y += 15;
@@ -168,7 +209,7 @@ export function layoutBooklet(
     }
     if (source.kind === 'summary') {
       appendTextPages(source.id, source.caption || 'Materials & notes', [
-        ...materials,
+        ...config.options.flatMap((o) => [o.name, ...materialSummary(applyOption(design, o))]),
         ...(config.include.notes && config.metadata.notes
           ? ['Project notes', config.metadata.notes]
           : []),
@@ -177,7 +218,13 @@ export function layoutBooklet(
     }
     const shot = config.shots.find((s) => s.id === source.shotId);
     if (!shot) throw Error(`Choose a render for ${source.caption || 'this page'}.`);
-    const state = header(source.id, source.caption || shot.name);
+    const option = config.options.find((o) => o.id === shot.optionId),
+      resolved = applyOption(design, option),
+      resolvedLayout = computeLayout(resolved);
+    const state = header(
+      source.id,
+      `${option?.name ?? 'Design option'} · ${source.caption || shot.name}`,
+    );
     state.page.shotId = shot.id;
     const bottom = source.dimensions ? 165 : 180;
     state.page.items.push({
@@ -192,15 +239,17 @@ export function layoutBooklet(
     });
     if (source.dimensions) {
       const depth =
-        Math.max(...layout.elements.flatMap((e) => e.parts.map((p) => p.z1)), layout.letterBase) -
-        Math.min(...layout.board.map((b) => b.z0));
+        Math.max(
+          ...resolvedLayout.elements.flatMap((e) => e.parts.map((p) => p.z1)),
+          resolvedLayout.letterBase,
+        ) - Math.min(...resolvedLayout.board.map((b) => b.z0));
       const details =
         shot.camera.preset === 'front'
           ? `Width ${formatInUnit(design.settings.width, unit)} × Height ${formatInUnit(design.settings.height, unit)}`
           : `Board ${formatInUnit(design.settings.width, unit)} × ${formatInUnit(design.settings.height, unit)} · Assembly depth ${formatInUnit(depth, unit)}`;
       state.page.items.push({ kind: 'line', x: 30, y: 171, x2: 267, y2: 171 });
       text(state.page.items, details, 30, 174, 3, 245);
-      const spacing = Math.max(0, ...layout.elements.map((e) => e.params.standoff ?? 0));
+      const spacing = Math.max(0, ...resolvedLayout.elements.map((e) => e.params.standoff ?? 0));
       if (spacing)
         text(
           state.page.items,
@@ -215,7 +264,7 @@ export function layoutBooklet(
       appendTextPages(
         `${source.id}-materials`,
         `${source.caption || shot.name} · materials`,
-        materials,
+        materialSummary(resolved),
       );
   }
   if (

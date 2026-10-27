@@ -15,7 +15,10 @@ import { ShotList } from './ShotList.tsx';
 import { BookletEditor } from './BookletEditor.tsx';
 import { PagePreview } from './PagePreview.tsx';
 import { ExportDialog } from './ExportDialog.tsx';
+import { OptionsEditor } from './OptionsEditor.tsx';
+import { duplicateOption, removeOption } from '../../presentation/options.ts';
 import './presentation.css';
+import './options.css';
 export function PresentationWorkspace() {
   const config = useApp((s) => s.presentation),
     design = useDesign(),
@@ -29,6 +32,17 @@ export function PresentationWorkspace() {
     [error, setError] = useState(''),
     [fontRetry, setFontRetry] = useState(0);
   const shot = config.shots.find((s) => s.id === selectedShot) ?? config.shots[0];
+  const option = config.options.find((o) => o.id === shot?.optionId) ?? config.options[0];
+  const copyOption = () => {
+    try {
+      const id = crypto.randomUUID(),
+        next = duplicateOption(config, option.id, id);
+      setPresentation(next);
+      setSelectedShot(next.shots.find((s) => s.optionId === id)?.id ?? selectedShot);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
   useEffect(() => {
     let live = true;
     loadBookletFont()
@@ -65,6 +79,8 @@ export function PresentationWorkspace() {
     const ids = new Set(
       config.pages.filter((p) => p.included && p.kind === 'render').map((p) => p.shotId),
     );
+    for (const p of layout.pages)
+      for (const i of p.items) if (i.kind === 'image') ids.add(i.shotId);
     return config.shots.filter((s) => ids.has(s.id));
   };
   useEffect(() => {
@@ -228,7 +244,7 @@ export function PresentationWorkspace() {
             })
           }
         >
-          Use Kirat Studio branding
+          Use Kirat Creations branding
         </button>
       )}
     </section>
@@ -259,9 +275,43 @@ export function PresentationWorkspace() {
         <aside className="booklet-left">
           {step === 'prepare' ? (
             <>
+              <label>
+                Design option
+                <select
+                  value={option.id}
+                  onChange={(e) =>
+                    setSelectedShot(
+                      config.shots.find((s) => s.optionId === e.target.value)?.id ?? '',
+                    )
+                  }
+                >
+                  {config.options.map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {o.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="booklet-buttons">
+                <button disabled={config.options.length >= 12 || renders.busy} onClick={copyOption}>
+                  ＋ Duplicate option
+                </button>
+                <button
+                  disabled={config.options.length <= 1 || renders.busy}
+                  onClick={() => {
+                    if (confirm(`Remove ${option.name} and its render pages from this proposal?`)) {
+                      const next = removeOption(config, option.id);
+                      setPresentation(next);
+                      setSelectedShot(next.shots[0]?.id ?? '');
+                    }
+                  }}
+                >
+                  Remove option & pages
+                </button>
+              </div>
               <div className="booklet-section-label">VIEWS & LIGHTING</div>
               <ShotList
-                shots={config.shots}
+                shots={config.shots.filter((s) => s.optionId === option.id)}
                 selected={shot?.id ?? ''}
                 onSelect={setSelectedShot}
                 assets={renders.assets}
@@ -300,7 +350,10 @@ export function PresentationWorkspace() {
                 Every angle.
               </h2>
               <p>Review the pages, then choose PDF or images. Only included pages are exported.</p>
-              <p>Front, side and technical top views preserve the actual sign dimensions.</p>
+              <p>
+                Compare constructions and colours. Use labelled exploded views to explain the parts
+                behind the finished sign.
+              </p>
               <button onClick={() => setStep('build')}>Review page selection →</button>
             </div>
           )}
@@ -418,7 +471,23 @@ export function PresentationWorkspace() {
         </main>
         <aside className="booklet-right">
           {step === 'prepare' && shot ? (
-            <RenderSetup shot={shot} onChange={change} onCustom={custom} />
+            <>
+              <OptionsEditor
+                key={option.id}
+                option={option}
+                design={design}
+                onChange={(next) =>
+                  setPresentation({
+                    ...config,
+                    options: config.options.map((o) => (o.id === next.id ? next : o)),
+                  })
+                }
+              />
+              <details className="shot-settings-details" open>
+                <summary>Camera, scene & lighting</summary>
+                <RenderSetup shot={shot} onChange={change} onCustom={custom} />
+              </details>
+            </>
           ) : step === 'build' ? (
             metadata
           ) : font ? (

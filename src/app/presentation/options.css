@@ -1,0 +1,31 @@
+.proposal-option-editor {
+  border-bottom: 1px solid #d9e0df;
+  padding-bottom: 20px;
+  margin-bottom: 20px;
+}
+.proposal-option-editor input[type='color'] {
+  height: 36px;
+}
+.option-shape-preview {
+  display: block;
+  width: 90px;
+  height: 64px;
+  margin: 12px auto;
+  background: #eef2f0;
+  padding: 8px;
+}
+.option-colour {
+  border-top: 1px solid #e7ece9;
+  padding: 4px 0 12px;
+}
+.shot-settings-details summary {
+  cursor: pointer;
+  font-weight: 600;
+  padding: 12px 0;
+}
+.booklet-left > .booklet-buttons {
+  margin-bottom: 24px;
+}
+.booklet-page-list > div > button:first-of-type {
+  font-size: 11px;
+}

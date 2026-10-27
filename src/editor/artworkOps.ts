@@ -14,10 +14,16 @@ export const renameGroup = (a: Artwork, id: string, name: string) =>
 
 export const renameElement = (a: Artwork, id: string, name: string) =>
   name.trim()
-    ? { ...a, elements: a.elements.map((e) => (e.id === id ? { ...e, name: name.trim().slice(0, 60) } : e)) }
+    ? {
+        ...a,
+        elements: a.elements.map((e) =>
+          e.id === id ? { ...e, name: name.trim().slice(0, 60) } : e,
+        ),
+      }
     : a;
 
-const nextGroupId = (a: Artwork) => 'g' + (Math.max(0, ...a.groups.map((g) => +g.id.slice(1) || 0)) + 1);
+const nextGroupId = (a: Artwork) =>
+  'g' + (Math.max(0, ...a.groups.map((g) => +g.id.slice(1) || 0)) + 1);
 
 // Move elements into a group. Elements keep their own construction; it counts as an override
 // when it differs from the new group's.
@@ -27,15 +33,25 @@ export function moveElements(a: Artwork, ids: string[], groupId: string): Artwor
   const set = new Set(ids);
   return {
     ...a,
-    elements: a.elements.map((e) => (set.has(e.id) ? { ...e, group: g.id, override: e.type !== g.type } : e)),
+    elements: a.elements.map((e) =>
+      set.has(e.id) ? { ...e, group: g.id, override: e.type !== g.type } : e,
+    ),
   };
 }
 
 // New group (optionally from elements). Takes the construction of the first element moved in.
-export function createGroup(a: Artwork, name: string, ids: string[] = []): { artwork: Artwork; id: string } {
+export function createGroup(
+  a: Artwork,
+  name: string,
+  ids: string[] = [],
+): { artwork: Artwork; id: string } {
   const id = nextGroupId(a),
     first = a.elements.find((e) => ids.includes(e.id)),
-    group: ArtworkGroup = { id, name: name.trim() || 'Group ' + id.slice(1), type: first?.type ?? 'front' };
+    group: ArtworkGroup = {
+      id,
+      name: name.trim() || 'Group ' + id.slice(1),
+      type: first?.type ?? 'front',
+    };
   return { id, artwork: moveElements({ ...a, groups: [...a.groups, group] }, ids, id) };
 }
 
@@ -75,11 +91,15 @@ export type GroupPatch = {
 
 // Returns an error message for out-of-range light settings, or null.
 export function checkLight(l: GroupLight): string | null {
-  if (l.mode !== undefined && !['white', 'rgb', 'artwork'].includes(l.mode)) return 'Unknown light mode.';
+  if (l.mode !== undefined && !['white', 'rgb', 'artwork'].includes(l.mode))
+    return 'Unknown light mode.';
   if (l.temp !== undefined && !(Number.isFinite(l.temp) && l.temp >= 2000 && l.temp <= 10000))
     return 'Colour temperature must be 2000–10000 K.';
   if (l.color !== undefined && !HEX.test(l.color)) return 'Colours are #rrggbb.';
-  if (l.dimming !== undefined && !(Number.isFinite(l.dimming) && l.dimming >= 0.1 && l.dimming <= 1))
+  if (
+    l.dimming !== undefined &&
+    !(Number.isFinite(l.dimming) && l.dimming >= 0.1 && l.dimming <= 1)
+  )
     return 'Dimming must be 10–100%.';
   if (l.on !== undefined && typeof l.on !== 'boolean') return 'Invalid on/off.';
   return null;
@@ -125,6 +145,7 @@ export function setGroup(a: Artwork, id: string, patch: GroupPatch): Artwork {
 export type ElementPatch = {
   type?: ConstructionType | 'inherit'; // inherit = follow the group
   faceColor?: string | null;
+  returnColor?: string | null;
   charHeight?: number | null;
   charWidth?: number | null;
   charDepth?: number | null;
@@ -134,6 +155,7 @@ export type ElementPatch = {
 export function setElements(a: Artwork, ids: string[], patch: ElementPatch): Artwork {
   const set = new Set(ids);
   if (patch.faceColor && !HEX.test(patch.faceColor)) throw Error('Colours are #rrggbb.');
+  if (patch.returnColor && !HEX.test(patch.returnColor)) throw Error('Colours are #rrggbb.');
   return {
     ...a,
     elements: a.elements.map((e) => {
@@ -141,9 +163,12 @@ export function setElements(a: Artwork, ids: string[], patch: ElementPatch): Art
       const out = { ...e },
         group = a.groups.find((g) => g.id === e.group)!;
       if (patch.type === 'inherit') Object.assign(out, { type: group.type, override: false });
-      else if (patch.type) Object.assign(out, { type: patch.type, override: patch.type !== group.type });
+      else if (patch.type)
+        Object.assign(out, { type: patch.type, override: patch.type !== group.type });
       if (patch.faceColor === null) delete out.faceColor;
       else if (patch.faceColor) out.faceColor = patch.faceColor;
+      if (patch.returnColor === null) out.returnColor = null;
+      else if (patch.returnColor) out.returnColor = patch.returnColor;
       for (const k of ['charHeight', 'charWidth', 'charDepth', 'letterSpacing'] as const) {
         if (patch[k] === null) delete out[k];
         else if (typeof patch[k] === 'number' && Number.isFinite(patch[k])) out[k] = patch[k];
@@ -167,6 +192,7 @@ export function artworkPalette(a: Artwork, limit = 8): string[] {
     return Math.hypot(a1 - a2, b1 - b2, c1 - c2) < 40;
   };
   const out: string[] = [];
-  for (const [c] of [...weight].sort((x, y) => y[1] - x[1])) if (!out.some((o) => near(o, c))) out.push(c);
+  for (const [c] of [...weight].sort((x, y) => y[1] - x[1]))
+    if (!out.some((o) => near(o, c))) out.push(c);
   return out.slice(0, limit);
 }

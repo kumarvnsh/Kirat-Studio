@@ -1,6 +1,7 @@
 import type { DesignState } from '../domain/project.ts';
 import type { Shot } from './model.ts';
-export const RENDER_VERSION = 'sign-final-v2';
+import { applyOption, type ProposalOption } from './options.ts';
+export const RENDER_VERSION = 'sign-final-v3';
 function canonical(value: unknown): string {
   if (Array.isArray(value)) return '[' + value.map(canonical).join(',') + ']';
   if (value && typeof value === 'object')
@@ -25,14 +26,16 @@ export async function shotFingerprint(
   design: DesignState,
   shot: Shot,
   version = RENDER_VERSION,
+  option?: ProposalOption,
 ): Promise<string> {
-  const d = structuredClone(design),
+  const d = applyOption(design, option),
     s = structuredClone(shot);
+  if (s.camera.preset === 'exploded') s.scene.kind = 'studio';
   if (d.artwork) {
     d.artwork.approved = false;
     for (const g of d.artwork.groups) g.name = '';
     for (const e of d.artwork.elements) e.name = '';
   }
-  const { id, name, pairId, ...appearance } = s;
+  const { id, name, pairId, optionId, ...appearance } = s;
   return fingerprint({ design: d, shot: appearance, version });
 }

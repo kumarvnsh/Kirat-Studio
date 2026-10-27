@@ -1,12 +1,13 @@
 import * as T from 'three';
 import { WebGLPathTracer, GradientEquirectTexture } from 'three-gpu-pathtracer';
 import { SignScene } from '../scene/scene.ts';
-import { addHaloEmitters, resetRenderScene } from '../scene/signMaterials.ts';
+import { addHaloEmitters } from '../scene/signMaterials.ts';
 import { preparePresentationEnvironment } from '../scene/presentationEnvironment.ts';
 import { presentationCamera } from './cameras.ts';
 import { accumulateSamples, renderDimensions, type RenderOptions } from './renderAdapter.ts';
 import { canvasBlob } from './pageCanvas.ts';
 import { loadImage } from '../artwork/import.ts';
+import { explodedLabels, labelledExplodedCanvas } from './explodedLabels.ts';
 import type { PresentationSnapshot } from './snapshot.ts';
 export class FinalRenderer {
   private scene: SignScene | null = null;
@@ -43,8 +44,8 @@ export class FinalRenderer {
         );
       }
       const v = this.scene;
-      // Every job owns its scene resources, including maps introduced by final preparation.
-      if (v.state) resetRenderScene(v);
+      // Every job owns a fresh WebGL context as well as its geometry and materials.
+      // Reusing a context after disposing a path tracer can leave stale material bindings.
       let art: HTMLCanvasElement | null = null;
       if (design.artwork?.imageData) {
         const image = await loadImage(design.artwork.imageData);
@@ -92,7 +93,7 @@ export class FinalRenderer {
         for (const mat of [m.material].flat()) mat.dispose();
         (m.userData.extraTexture as T.Texture).dispose();
       }
-      if (quality === 'final') addHaloEmitters(v.group, input);
+      if (quality === 'final' && shot.camera.preset !== 'exploded') addHaloEmitters(v.group, input);
       preparePresentationEnvironment(v, shot.scene, shot);
       const isNight = shot.environment === 'night',
         isDusk = shot.environment === 'dusk';
@@ -105,7 +106,7 @@ export class FinalRenderer {
       v.scene.environment = env;
       v.scene.environmentIntensity = (isNight ? 0.4 : isDusk ? 0.7 : 1.4) * daylightScale;
       v.scene.background = new T.Color(
-        shot.scene.kind === 'studio'
+        shot.scene.kind === 'studio' || shot.camera.preset === 'exploded'
           ? isNight
             ? '#202c3b'
             : '#e0e4e5'
@@ -179,7 +180,11 @@ export class FinalRenderer {
       }
       signal.throwIfAborted();
       onProgress({ fraction: 1, label: 'Encoding image…' });
-      const blob = await canvasBlob(renderer.domElement);
+      const output =
+        shot.camera.preset === 'exploded'
+          ? await labelledExplodedCanvas(renderer.domElement, explodedLabels(v.layers, camera))
+          : renderer.domElement;
+      const blob = await canvasBlob(output);
       signal.throwIfAborted();
       return { blob, width, height };
     } catch (error) {
@@ -188,6 +193,7 @@ export class FinalRenderer {
     } finally {
       tracer?.dispose();
       environment?.dispose();
+      this.dispose();
       this.active = false;
     }
   }

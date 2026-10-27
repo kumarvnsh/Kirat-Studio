@@ -19,7 +19,13 @@ import type {
 export type BoardLayer = { layer: LayerId; name: string; material: string; z0: number; z1: number };
 export type FrameMember = { axis: 'x' | 'y'; length: number; x: number; y: number };
 export type PartKind = 'stud' | 'standoff' | 'back' | 'returns' | 'leds' | 'face' | 'trim' | 'flat';
-export type LetterPart = { kind: PartKind; layer: LayerId; material: string; z0: number; z1: number };
+export type LetterPart = {
+  kind: PartKind;
+  layer: LayerId;
+  material: string;
+  z0: number;
+  z1: number;
+};
 export type ElementLayout = {
   id: string;
   name: string;
@@ -93,7 +99,13 @@ export const PSU_SIZE = { w: 160, h: 98, d: 38 };
 export function boardStack(s: DesignSettings): { layers: BoardLayer[]; front: number } {
   const F = s.frame,
     layers: BoardLayer[] = [
-      { layer: 'gi', name: 'GI rear cover', material: `GI sheet ${s.gi} mm`, z0: -F / 2 - s.gi, z1: -F / 2 },
+      {
+        layer: 'gi',
+        name: 'GI rear cover',
+        material: `GI sheet ${s.gi} mm`,
+        z0: -F / 2 - s.gi,
+        z1: -F / 2,
+      },
       {
         layer: 'frame',
         name: 'MS frame',
@@ -113,7 +125,13 @@ export function boardStack(s: DesignSettings): { layers: BoardLayer[]; front: nu
     });
     z += s.backing;
   }
-  layers.push({ layer: 'acp', name: 'ACP fascia', material: `ACP ${s.acp} mm`, z0: z, z1: z + s.acp });
+  layers.push({
+    layer: 'acp',
+    name: 'ACP fascia',
+    material: `ACP ${s.acp} mm`,
+    z0: z,
+    z1: z + s.acp,
+  });
   return { layers, front: z + s.acp };
 }
 
@@ -231,7 +249,8 @@ function fixings(regions: Region[]): Point[] {
   const out: Point[] = [];
   for (const r of regions) {
     let pts: Point[] = [];
-    for (let s = STANDOFF_SPACING; s >= 10 && !pts.length; s /= 2) pts = grid([r], s, STANDOFF_LIMIT, 3, 3);
+    for (let s = STANDOFF_SPACING; s >= 10 && !pts.length; s /= 2)
+      pts = grid([r], s, STANDOFF_LIMIT, 3, 3);
     out.push(...pts);
   }
   return out.slice(0, Math.max(STANDOFF_LIMIT, regions.length));
@@ -309,7 +328,17 @@ export function computeLayout(design: DesignState): Layout {
       y1: number;
       cx: number;
       cy: number;
-      cols: { els: ElBase[]; x0: number; x1: number; y0: number; y1: number; cx: number; cy: number; w: number; h: number }[];
+      cols: {
+        els: ElBase[];
+        x0: number;
+        x1: number;
+        y0: number;
+        y1: number;
+        cx: number;
+        cy: number;
+        w: number;
+        h: number;
+      }[];
       baseCharHeight: number;
       baseCharWidth: number;
       naturalLetterGap: number;
@@ -357,9 +386,11 @@ export function computeLayout(design: DesignState): Layout {
           cy: eb.cy,
         });
       }
-      const baseCharHeight = cols.length > 1 ? Math.max(...cols.map((c) => c.h)) : Math.max(0.1, gy1 - gy0);
+      const baseCharHeight =
+        cols.length > 1 ? Math.max(...cols.map((c) => c.h)) : Math.max(0.1, gy1 - gy0);
       const sortedW = cols.map((c) => c.w).sort((p, q) => p - q);
-      const baseCharWidth = cols.length > 1 ? sortedW[Math.floor(sortedW.length / 2)] : Math.max(0.1, gx1 - gx0);
+      const baseCharWidth =
+        cols.length > 1 ? sortedW[Math.floor(sortedW.length / 2)] : Math.max(0.1, gx1 - gx0);
       let naturalLetterGap = 0;
       if (cols.length > 1) {
         let sum = 0;
@@ -386,8 +417,12 @@ export function computeLayout(design: DesignState): Layout {
     const naturalGroupGapMap = new Map<string, { gap: number; axis: 'x' | 'y'; dir: number }>();
     let gapSum = 0,
       gapCount = 0;
-    const allCx = groupBoxes.length ? groupBoxes.reduce((s, b) => s + b.cx, 0) / groupBoxes.length : 0;
-    const allCy = groupBoxes.length ? groupBoxes.reduce((s, b) => s + b.cy, 0) / groupBoxes.length : 0;
+    const allCx = groupBoxes.length
+      ? groupBoxes.reduce((s, b) => s + b.cx, 0) / groupBoxes.length
+      : 0;
+    const allCy = groupBoxes.length
+      ? groupBoxes.reduce((s, b) => s + b.cy, 0) / groupBoxes.length
+      : 0;
     for (const gb of groupBoxes) {
       let bestGap = 0,
         bestDist = Infinity,
@@ -397,7 +432,9 @@ export function computeLayout(design: DesignState): Layout {
         if (other.id === gb.id) continue;
         const hGap = Math.max(gb.x0, other.x0) - Math.min(gb.x1, other.x1);
         const vGap = Math.max(gb.y0, other.y0) - Math.min(gb.y1, other.y1);
-        const dist = Math.hypot(Math.max(0, hGap), Math.max(0, vGap)) || Math.hypot(gb.cx - other.cx, gb.cy - other.cy);
+        const dist =
+          Math.hypot(Math.max(0, hGap), Math.max(0, vGap)) ||
+          Math.hypot(gb.cx - other.cx, gb.cy - other.cy);
         if (dist < bestDist) {
           bestDist = dist;
           if (hGap > vGap) {
@@ -429,12 +466,15 @@ export function computeLayout(design: DesignState): Layout {
     const elMapper = new Map<string, (p: Point) => Point>();
     for (const gb of groupBoxes) {
       const g = a.groups.find((x) => x.id === gb.id)!;
-      const gScaleY = g.charHeight !== undefined && gb.baseCharHeight > 0 ? g.charHeight / gb.baseCharHeight : 1;
-      const gScaleX = g.charWidth !== undefined && gb.baseCharWidth > 0 ? g.charWidth / gb.baseCharWidth : 1;
+      const gScaleY =
+        g.charHeight !== undefined && gb.baseCharHeight > 0 ? g.charHeight / gb.baseCharHeight : 1;
+      const gScaleX =
+        g.charWidth !== undefined && gb.baseCharWidth > 0 ? g.charWidth / gb.baseCharWidth : 1;
       const letterSpacingDelta = g.letterSpacing ?? 0;
       const ng = naturalGroupGapMap.get(gb.id) ?? { gap: 0, axis: 'y' as const, dir: 1 };
       const groupGapDelta = g.groupGap ?? 0;
-      const totalGroupShift = groupBoxes.length > 1 ? boardSpacingDelta * 0.5 + groupGapDelta : groupGapDelta;
+      const totalGroupShift =
+        groupBoxes.length > 1 ? boardSpacingDelta * 0.5 + groupGapDelta : groupGapDelta;
       const groupShiftX = ng.axis === 'x' ? ng.dir * totalGroupShift : 0;
       const groupShiftY = ng.axis === 'y' ? ng.dir * totalGroupShift : 0;
 
@@ -478,7 +518,8 @@ export function computeLayout(design: DesignState): Layout {
           if (isIdentity) {
             elMapper.set(eb.id, baseMap);
           } else {
-            const targetColCx = gb.cx + (col.cx - gb.cx) * gScaleX + colOffset + elSpacing + groupShiftX;
+            const targetColCx =
+              gb.cx + (col.cx - gb.cx) * gScaleX + colOffset + elSpacing + groupShiftX;
             const targetColCy = gb.cy + (col.cy - gb.cy) * gScaleY + groupShiftY;
             elMapper.set(eb.id, (p: Point): Point => {
               const [bx, by] = baseMap(p);
@@ -499,7 +540,10 @@ export function computeLayout(design: DesignState): Layout {
         params = { ...resolveParams(e.type, group) },
         light = resolveLight(group, e, s.ledTemp),
         map = elMapper.get(e.id) ?? baseMap,
-        regions = e.regions.map((r) => ({ outer: r.outer.map(map), holes: r.holes.map((h) => h.map(map)) })),
+        regions = e.regions.map((r) => ({
+          outer: r.outer.map(map),
+          holes: r.holes.map((h) => h.map(map)),
+        })),
         m = recipe.materials;
       if (typeof e.charDepth === 'number') {
         if (recipe.lit) params.depth = e.charDepth;
@@ -552,7 +596,7 @@ export function computeLayout(design: DesignState): Layout {
         params,
         faceColor: e.faceColor ?? group?.faceColor,
         light: recipe.lit ? light : undefined,
-        returnColor: group?.returnColor,
+        returnColor: e.returnColor === null ? undefined : (e.returnColor ?? group?.returnColor),
         regions,
         bounds: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)],
         pixelBounds: e.bounds,
@@ -560,7 +604,13 @@ export function computeLayout(design: DesignState): Layout {
         base: front,
         parts,
         leds: recipe.lit
-          ? grid(regions, LED_SPACING, LED_LIMIT - layout.ledcount, LED_SIZE.w / 2 + 2, LED_SIZE.h / 2 + 2)
+          ? grid(
+              regions,
+              LED_SPACING,
+              LED_LIMIT - layout.ledcount,
+              LED_SIZE.w / 2 + 2,
+              LED_SIZE.h / 2 + 2,
+            )
           : [],
         fixings: e.type === 'vinyl' ? [] : fixings(regions),
       };
@@ -624,7 +674,8 @@ export function planPower(L: Layout, s: DesignSettings): Power {
     );
   if (psus.some((p) => p[1] + PSU_SIZE.h / 2 > H / 2 - F))
     warnings.push('PSUs do not fit in the bottom-right frame bay. Plan a separate enclosure.');
-  if (L.ledcount >= LED_LIMIT) warnings.push(`LED grid capped at ${LED_LIMIT} modules; load is understated.`);
+  if (L.ledcount >= LED_LIMIT)
+    warnings.push(`LED grid capped at ${LED_LIMIT} modules; load is understated.`);
   const cables: Cable[] = lit.map((e, i) => {
     const [px, py] = e.leds[0],
       psu = psus.length ? i % psus.length : 0,
