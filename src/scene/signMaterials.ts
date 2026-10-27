@@ -4,6 +4,16 @@ import { haloLit } from '../domain/recipes.ts';
 import { kelvinToHex } from '../domain/lighting.ts';
 import type { SceneInput } from '../domain/layout.ts';
 import type { Scenery } from './scenery.ts';
+export function prepareFinalCoatings(root: T.Object3D) {
+  root.traverse((o) => {
+    if (!(o instanceof T.Mesh)) return;
+    for (const m of [o.material].flat()) {
+      // The legacy WebGL tracer's clear-coat BRDF can produce NaNs on this GPU.
+      // Keep the base PBR finish; do not change design colours or editor materials.
+      if (m instanceof T.MeshPhysicalMaterial) m.clearcoat = 0;
+    }
+  });
+}
 export function resetRenderScene(owner: {
   scene: T.Scene;
   group: T.Group;

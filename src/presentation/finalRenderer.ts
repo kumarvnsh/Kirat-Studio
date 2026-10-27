@@ -1,7 +1,7 @@
 import * as T from 'three';
 import { WebGLPathTracer, GradientEquirectTexture } from 'three-gpu-pathtracer';
 import { SignScene } from '../scene/scene.ts';
-import { addHaloEmitters } from '../scene/signMaterials.ts';
+import { addHaloEmitters, prepareFinalCoatings } from '../scene/signMaterials.ts';
 import { preparePresentationEnvironment } from '../scene/presentationEnvironment.ts';
 import { presentationCamera } from './cameras.ts';
 import { accumulateSamples, renderDimensions, type RenderOptions } from './renderAdapter.ts';
@@ -44,8 +44,7 @@ export class FinalRenderer {
         );
       }
       const v = this.scene;
-      // Every job owns a fresh WebGL context as well as its geometry and materials.
-      // Reusing a context after disposing a path tracer can leave stale material bindings.
+      // Every job owns and releases its WebGL context, geometry and materials.
       let art: HTMLCanvasElement | null = null;
       if (design.artwork?.imageData) {
         const image = await loadImage(design.artwork.imageData);
@@ -57,6 +56,7 @@ export class FinalRenderer {
       }
       v.build(input, art);
       v.highlight(false);
+      if (quality === 'final') prepareFinalCoatings(v.group);
       const remove: T.Mesh[] = [];
       v.group.traverse((o) => {
         if (!(o instanceof T.Mesh)) return;

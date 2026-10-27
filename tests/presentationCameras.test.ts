@@ -49,3 +49,14 @@ test('snapshot includes complete assembly without changing design', () => {
   assert.notEqual(s.design.settings.width, d.settings.width);
   assert.equal(JSON.stringify(s.design), before);
 });
+
+test('perspective depth precision separates thin fascia from the frame at sign scale', () => {
+  for (const w of [3.6, 12, 24]) {
+    const b = new T.Box3(new T.Vector3(-w / 2, -0.6, -0.05), new T.Vector3(w / 2, 0.6, 0.1));
+    const c = presentationCamera(b, { preset: 'threeQuarter' }, 2);
+    const a = new T.Vector3(0, 0, 0.02).project(c).z;
+    const z = new T.Vector3(0, 0, 0.0208).project(c).z;
+    const levels = Math.abs(a - z) * 0.5 * (2 ** 24 - 1);
+    assert.ok(levels > 100, `${w} m sign has only ${levels} depth levels across 0.8 mm`);
+  }
+});

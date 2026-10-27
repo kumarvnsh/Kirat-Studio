@@ -15,3 +15,11 @@ Implementation refinement: reuse the authoritative existing SignScene builder in
 Final adapter: prepare snapshot and complete assembled scene; replace preview-only halo planes with rear-facing contour emitters at the actual standoff plane; create a linear equirectangular environment and broad key/fill area lights; set the deterministic perspective/orthographic camera; accumulate 512 samples with tiled yielding; AgX-map once to sRGB; encode PNG after a full frame. Check AbortSignal and context state before capture. A failed shader/context or unsupported material reports failure, with no silent preview substitution.
 
 Built-in environment refinements and Fenesta brand-colour checking remain implementation verification work, not conclusions from synthetic fixture images. Use the original local Fenesta PNG only as test input; do not bundle it as an app asset.
+
+## Deployment regression investigation
+
+The first reported artifact was raster depth conflict: a fixed 0.001 m near plane yielded fewer than one 24-bit depth level across 0.8 mm at the fitted 3.6 m sign distance. The camera now scales its near plane from the nearest subject extent; tests require over 100 levels at 3.6, 12 and 24 m widths.
+
+Fresh WebGL contexts did not eliminate intermittent black fascia. Shader probes confirmed correct albedo and normals. Bypassing shadow attenuation and changing the random sampler still reproduced black output, excluding those as sufficient explanations. Separate BRDF probes identified NaN output in clear-coat evaluation while diffuse, base specular and sheen evaluation remained finite. The final-render fallback disables only the additional clear-coat lobe, retaining base PBR roughness, metalness, colour, maps and emission. Raster previews retain their original materials. Rendering remains uncalibrated.
+
+An additional investigation found absolute versus relative node-address differences between an embedded legacy any-hit helper and three-mesh-bvh 0.9.x. That helper is not called by the active render shader, so this is not attributed as the black-board cause and does not justify an unrelated dependency change.

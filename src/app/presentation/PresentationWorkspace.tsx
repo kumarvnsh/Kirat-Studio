@@ -16,6 +16,8 @@ import { BookletEditor } from './BookletEditor.tsx';
 import { PagePreview } from './PagePreview.tsx';
 import { ExportDialog } from './ExportDialog.tsx';
 import { OptionsEditor } from './OptionsEditor.tsx';
+import { PageSelection } from './PageSelection.tsx';
+import { selectedShots } from '../../presentation/selection.ts';
 import { duplicateOption, removeOption } from '../../presentation/options.ts';
 import './presentation.css';
 import './options.css';
@@ -31,6 +33,8 @@ export function PresentationWorkspace() {
     [font, setFont] = useState<BookletFont>(),
     [error, setError] = useState(''),
     [fontRetry, setFontRetry] = useState(0);
+  const [batchIds, setBatchIds] = useState<string[]>([]);
+  const batch = selectedShots(config, batchIds);
   const shot = config.shots.find((s) => s.id === selectedShot) ?? config.shots[0];
   const option = config.options.find((o) => o.id === shot?.optionId) ?? config.options[0];
   const copyOption = () => {
@@ -310,6 +314,27 @@ export function PresentationWorkspace() {
                 </button>
               </div>
               <div className="booklet-section-label">VIEWS & LIGHTING</div>
+              <div className="booklet-buttons">
+                <button
+                  disabled={renders.busy}
+                  onClick={() =>
+                    setBatchIds((ids) => [
+                      ...new Set([
+                        ...ids,
+                        ...config.shots.filter((s) => s.optionId === option.id).map((s) => s.id),
+                      ]),
+                    ])
+                  }
+                >
+                  Select all views in option
+                </button>
+                <button disabled={renders.busy || !batch.length} onClick={() => setBatchIds([])}>
+                  Clear selection
+                </button>
+              </div>
+              <p className="booklet-hint">
+                {batch.length} selected across options · renders queue one at a time.
+              </p>
               <ShotList
                 shots={config.shots.filter((s) => s.optionId === option.id)}
                 selected={shot?.id ?? ''}
@@ -317,6 +342,13 @@ export function PresentationWorkspace() {
                 assets={renders.assets}
                 keys={renders.keys}
                 errors={renders.errors}
+                checked={batchIds}
+                onCheck={(id, checked) =>
+                  setBatchIds((ids) =>
+                    checked ? [...new Set([...ids, id])] : ids.filter((s) => s !== id),
+                  )
+                }
+                disabled={renders.busy}
               />
               <div className="booklet-buttons">
                 <button disabled={!shot || config.shots.length >= 100} onClick={() => addShot()}>
@@ -342,20 +374,7 @@ export function PresentationWorkspace() {
               }}
             />
           ) : (
-            <div className="booklet-delivery-note">
-              <span className="booklet-section-label">THE FINAL CHECK</span>
-              <h2>
-                A clear proposal.
-                <br />
-                Every angle.
-              </h2>
-              <p>Review the pages, then choose PDF or images. Only included pages are exported.</p>
-              <p>
-                Compare constructions and colours. Use labelled exploded views to explain the parts
-                behind the finished sign.
-              </p>
-              <button onClick={() => setStep('build')}>Review page selection →</button>
-            </div>
+            <PageSelection config={config} onChange={setPresentation} disabled={renders.busy} />
           )}
         </aside>
         <main className="booklet-stage">
@@ -411,6 +430,12 @@ export function PresentationWorkspace() {
                   onClick={() => shot && void renders.render([shot], 'final')}
                 >
                   Render this view
+                </button>
+                <button
+                  disabled={renders.busy || !batch.length}
+                  onClick={() => void renders.render(batch, 'final')}
+                >
+                  Render selected ({batch.length})
                 </button>
                 <button
                   disabled={renders.busy || !includedShots().length}

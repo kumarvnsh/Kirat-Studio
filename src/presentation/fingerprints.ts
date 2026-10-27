@@ -1,7 +1,7 @@
 import type { DesignState } from '../domain/project.ts';
 import type { Shot } from './model.ts';
 import { applyOption, type ProposalOption } from './options.ts';
-export const RENDER_VERSION = 'sign-final-v3';
+export const RENDER_VERSION = 'sign-final-v4';
 function canonical(value: unknown): string {
   if (Array.isArray(value)) return '[' + value.map(canonical).join(',') + ']';
   if (value && typeof value === 'object')

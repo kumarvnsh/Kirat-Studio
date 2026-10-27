@@ -118,6 +118,8 @@ export function usePresentationRenders() {
         jobs,
         async (job, signal) => {
           const id = job.snapshot.shot.id;
+          const index = jobs.indexOf(job);
+          const optionName = config.options.find((o) => o.id === job.snapshot.shot.optionId)?.name;
           if (quality === 'final' && assets[id]?.key === job.key && assets[id]?.quality === 'final')
             return null;
           try {
@@ -128,8 +130,8 @@ export function usePresentationRenders() {
                 onProgress: (p) => {
                   if (mounted.current)
                     setProgress({
-                      fraction: p.fraction ?? 0,
-                      label: `${job.snapshot.shot.name} · ${p.label}`,
+                      fraction: (index + (p.fraction ?? 0)) / jobs.length,
+                      label: `${index + 1}/${jobs.length} · ${optionName ?? ''} · ${job.snapshot.shot.name} · ${p.label}`,
                     });
                 },
               },

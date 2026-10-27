@@ -53,6 +53,10 @@ export function presentationCamera(
     camera = new T.PerspectiveCamera(35, aspect, 0.001, distance + radius * 3);
   }
   camera.up.copy(up);
+  // A 1 mm near plane loses sub-millimetre depth precision several metres away,
+  // letting rear frame members win the depth test over the thin fascia.
+  const nearest = Math.min(...corners.map((p) => distance - p.dot(direction)));
+  camera.near = Math.max(0.01, nearest * 0.5);
   camera.position.copy(center).addScaledVector(direction, distance);
   camera.lookAt(center);
   camera.updateProjectionMatrix();
