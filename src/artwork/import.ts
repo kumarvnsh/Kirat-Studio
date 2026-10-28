@@ -93,11 +93,18 @@ export function traceImage(
 
 // Uploaded file → SVG text (imported as vectors) or an object URL for raster tracing.
 // SVGs must be self-contained: no scripts or external resources.
-export async function readUpload(file: File): Promise<{ svg: string } | { url: string }> {
+export async function readUpload(
+  file: File,
+): Promise<{ svg: string } | { url: string } | { ai: Uint8Array }> {
+  if (/\.ai$/i.test(file.name)) {
+    // Illustrator files carry thumbnails and editing data, so they run larger than plain SVGs.
+    if (file.size > 50 * 1024 * 1024) throw Error('Choose an Illustrator file smaller than 50 MB.');
+    return { ai: new Uint8Array(await file.arrayBuffer()) };
+  }
   if (file.size > 8 * 1024 * 1024) throw Error('Choose artwork smaller than 8 MB.');
   const isSvg = file.type === 'image/svg+xml' || /\.svg$/i.test(file.name);
   if (!isSvg && !['image/png', 'image/jpeg', 'image/webp'].includes(file.type))
-    throw Error('Use SVG, PNG, JPG or WebP.');
+    throw Error('Use AI, SVG, PNG, JPG or WebP.');
   if (!isSvg) return { url: URL.createObjectURL(file) };
   const text = await file.text();
   if (
