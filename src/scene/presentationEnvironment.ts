@@ -64,6 +64,8 @@ export function preparePresentationEnvironment(v: SignScene, scene: Presentation
     v.scenery!.group.visible = false;
     return;
   }
+  // Rooftop letters: the roof scenery is the setting; shopfront dressing would sit on the roof.
+  if (v.state!.scenePreset === 'rooftop') return;
   if (scene.kind === 'wall' || scene.kind === 'facade')
     for (const child of [...v.scenery!.group.children])
       if (!['mounting-wall', 'floor'].includes(child.name) && child instanceof T.Mesh) {

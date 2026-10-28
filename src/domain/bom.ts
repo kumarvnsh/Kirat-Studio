@@ -3,7 +3,8 @@ import { panelIntegrated } from './recipes.ts';
 // allowances or nesting. Rows marked `estimate` depend on placeholder rules (LED grid, fixings).
 import { area } from '../artwork/contours.js';
 import { computeLayout, MODULE_W, PSU_LOADING, PSU_W, type PartKind } from './layout.ts';
-import type { DesignState, LayerId } from './project.ts';
+import { isRooftop, type DesignState, type LayerId } from './project.ts';
+import { memberLength } from './rooftop.ts';
 
 export type BomRow = {
   layer: LayerId;
@@ -42,6 +43,36 @@ export function bom(design: DesignState): BomRow[] {
         unit: 'm²',
         note: `${s.width} × ${s.height} mm`,
         estimate: false,
+      });
+  }
+  if (isRooftop(s)) {
+    // One row per member role: total length and count, cut lengths not nested.
+    const roles = new Map<string, { n: number; length: number }>();
+    for (const mb of L.structure) {
+      const r = roles.get(mb.name) ?? { n: 0, length: 0 };
+      r.n++;
+      r.length += memberLength(mb);
+      roles.set(mb.name, r);
+    }
+    for (const [name, r] of roles)
+      rows.push({
+        layer: 'frame',
+        item: `Rooftop structure · ${name}`,
+        material: `MS hollow section ${s.frame}×${s.frame}×${s.framewall} mm, galvanised`,
+        qty: r.length / 1000,
+        unit: 'm',
+        note: `${r.n} member${r.n === 1 ? '' : 's'} · layout guide, engineer to confirm`,
+        estimate: true,
+      });
+    if (L.feet.length)
+      rows.push({
+        layer: 'frame',
+        item: 'Base plates and roof anchors',
+        material: 'MS plate 200×200×10 mm with 4 anchors (placeholder)',
+        qty: L.feet.length,
+        unit: 'pcs',
+        note: 'fixing and waterproofing to suit the roof, engineer to confirm',
+        estimate: true,
       });
   }
   const groups = design.artwork?.groups ?? [];
@@ -142,7 +173,7 @@ export function bom(design: DesignState): BomRow[] {
       {
         layer: 'power',
         item: 'Cable penetrations',
-        material: 'Grommet / gland through fascia',
+        material: isRooftop(s) ? 'Weatherproof cable gland at letter back' : 'Grommet / gland through fascia',
         qty: pw.cables.length,
         unit: 'pcs',
         note: 'one per lit element',

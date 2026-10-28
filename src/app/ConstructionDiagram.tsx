@@ -2,7 +2,8 @@ import { Dialog } from './Dialog.tsx';
 import { useId, useState } from 'react';
 import { ConstructionReference } from './ConstructionReference.tsx';
 import { boardStack } from '../domain/layout.ts';
-import type { ConstructionType, DesignSettings } from '../domain/project.ts';
+import { isRooftop, ROOFTOP_TYPES, type ConstructionType, type DesignSettings } from '../domain/project.ts';
+import { useDesign } from './store.ts';
 import { frontLit, haloLit, recipes, VINYL_THICKNESS, panelIntegrated } from '../domain/recipes.ts';
 
 export type ConstructionMeta = {
@@ -403,7 +404,11 @@ function ConstructionOptions({
   inheritLabel?: string;
   onChange: (next: ConstructionType | 'inherit') => void;
 }) {
-  const renderGroup = (title: string, items: ConstructionMeta[]) => (
+  // Rooftop letters stand alone: only constructions that don't need a fascia are offered.
+  const rooftop = isRooftop(useDesign().settings);
+  const renderGroup = (title: string, all: ConstructionMeta[]) => {
+    const items = rooftop ? all.filter((m) => ROOFTOP_TYPES.includes(m.type)) : all;
+    return !items.length ? null : (
     <div className="c-group" key={title}>
       <div className="c-group-label">{title}</div>
       <div className="c-grid">
@@ -435,9 +440,16 @@ function ConstructionOptions({
       </div>
     </div>
   );
+  };
 
   return (
     <div className="c-picker">
+      {rooftop && (
+        <p className="muted">
+          Rooftop letters stand on their own, so only front-lit, full acrylic (face and sides lit)
+          and flat letters are shown.
+        </p>
+      )}
       {inheritLabel && (
         <button
           type="button"

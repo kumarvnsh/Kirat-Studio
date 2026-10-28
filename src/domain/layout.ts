@@ -1,20 +1,24 @@
 // Layout: turns a design into dimensioned physical parts (millimetres, sign coordinates).
 // x right, y up, origin at the board centre; z out of the wall, 0 at the centre of the steel frame.
 // The renderer, the BOM and the inspector all read this; none of them repeat the math.
-import { normalizeScenePreset } from './scenePresets.ts';
+import { mountedScenePreset } from './scenePresets.ts';
 import { inside, perimeter } from '../artwork/contours.js';
 import { expandRegions } from './panelOpenings.ts';
 import { recipes, panelIntegrated, resolveParams, VINYL_THICKNESS } from './recipes.ts';
 import { assemblySteps, visibleLayers } from './assembly.ts';
 import { isRGB, resolveLight, type ResolvedLight } from './lighting.ts';
-import type {
-  ConstructionType,
-  DesignSettings,
-  DesignState,
-  LayerId,
-  Point,
-  Region,
-  ViewState,
+import { rooftopStructure, type StructureMember } from './rooftop.ts';
+import {
+  isRooftop,
+  ROOFTOP_TYPES,
+  constructionNames,
+  type ConstructionType,
+  type DesignSettings,
+  type DesignState,
+  type LayerId,
+  type Point,
+  type Region,
+  type ViewState,
 } from './project.ts';
 
 export type BoardLayer = { layer: LayerId; name: string; material: string; z0: number; z1: number };
@@ -72,9 +76,12 @@ export type Layout = {
   scale: number; // mm per traced pixel
   cx: number; // artwork centre in traced pixels
   cy: number;
-  board: BoardLayer[];
-  letterBase: number; // z of the ACP front face
+  board: BoardLayer[]; // empty for rooftop letters
+  letterBase: number; // z of the ACP front face, or of the rooftop structure's front face
   frame: FrameMember[];
+  structure: StructureMember[]; // rooftop support members (empty on a fascia board)
+  roofY?: number; // rooftop only: roof surface height (mm)
+  feet: Point3[]; // rooftop only: base plates where members meet the roof
   elements: ElementLayout[];
   groupMetrics: Record<string, GroupLayoutMetrics>;
   naturalBoardGroupGap: number; // average natural gap between groups on the board (mm)
@@ -265,14 +272,18 @@ export function computeLayout(design: DesignState): Layout {
   if (hit) return hit;
   const s = design.settings,
     a = design.artwork,
-    { layers: board, front } = boardStack(s);
+    rooftop = isRooftop(s),
+    // Rooftop letters have no board: their backs sit on the front face of the steel members.
+    { layers: board, front } = rooftop ? { layers: [], front: s.frame / 2 } : boardStack(s);
   const layout: Layout = {
     scale: 1,
     cx: 0,
     cy: 0,
     board,
     letterBase: front,
-    frame: frameMembers(s),
+    frame: rooftop ? [] : frameMembers(s),
+    structure: [],
+    feet: [],
     elements: [],
     groupMetrics: {},
     naturalBoardGroupGap: 0,
@@ -562,7 +573,7 @@ export function computeLayout(design: DesignState): Layout {
       };
       if (params.standoff > 0) add('standoff', 'mounting', params.standoff, m.standoff);
       if (panelIntegrated(e.type)) {
-        const rear = front - s.acp;
+        const rear = front - (rooftop ? 0 : s.acp);
         const overlap = expandRegions(regions, params.flange);
         if (e.type === 'acpbacklit') {
           parts.push({
@@ -653,14 +664,14 @@ export function computeLayout(design: DesignState): Layout {
           : [],
         fixings: e.type === 'vinyl' || panelIntegrated(e.type) ? [] : fixings(regions),
       };
-      // Studs pass from the letter back through the fascia into the frame cavity.
+      // Studs pass from the letter back through the fascia (or into the steel) behind it.
       if (el.fixings.length) {
-        const acp = board[board.length - 1];
+        const behind = rooftop ? front : board[board.length - 1].z0;
         parts.push({
           kind: 'stud',
           layer: 'mounting',
           material: 'Fixing stud M5 (placeholder)',
-          z0: acp.z0 - STUD_EMBED,
+          z0: behind - STUD_EMBED,
           z1: front + params.standoff + 2,
         });
       }
@@ -681,7 +692,25 @@ export function computeLayout(design: DesignState): Layout {
       }
     }
   }
+  if (rooftop) {
+    const r = rooftopStructure(
+      s,
+      s.mounting!,
+      layout.elements.filter((e) => e.type !== 'omit').map((e) => e.bounds),
+    );
+    Object.assign(layout, { structure: r.members, roofY: r.roofY, feet: r.feet });
+  }
   layout.power = planPower(layout, s);
+  if (rooftop) {
+    layout.power.warnings.unshift(
+      'Rooftop structure is a layout guide only: wind load, roof fixing and the steel design need an engineer’s sign-off.',
+    );
+    const unsuited = [...new Set(layout.elements.map((e) => e.type).filter((t) => !ROOFTOP_TYPES.includes(t)))];
+    if (unsuited.length)
+      layout.power.warnings.push(
+        `${unsuited.map((t) => constructionNames[t]).join(', ')} need a fascia board. Choose front-lit, full acrylic, flat acrylic or flat metal for rooftop letters.`,
+      );
+  }
   const integrated = layout.elements.filter((e) => panelIntegrated(e.type));
   if (integrated.length) {
     layout.power.warnings.push(
@@ -703,6 +732,7 @@ export function computeLayout(design: DesignState): Layout {
 // Placeholder power plan: size PSUs from the LED load, park them in the bottom-right frame bay,
 // and route one cable per lit element: through the fascia, down inside the frame, across to its PSU.
 export function planPower(L: Layout, s: DesignSettings): Power {
+  if (L.roofY !== undefined) return planRooftopPower(L);
   const lit = L.elements.filter((e) => e.leds.length),
     loadW = L.ledcount * MODULE_W,
     count = loadW > 0 ? Math.ceil(loadW / (PSU_W * PSU_LOADING)) : 0,
@@ -749,12 +779,48 @@ export function planPower(L: Layout, s: DesignSettings): Power {
   return { loadW, psus, cables, warnings };
 }
 
+// Rooftop: PSUs in a weatherproof enclosure on the roof behind the sign; one cable per lit letter
+// runs from its back down the structure to roof level, then along the roof to the enclosure.
+function planRooftopPower(L: Layout): Power {
+  const lit = L.elements.filter((e) => e.leds.length),
+    loadW = L.ledcount * MODULE_W,
+    count = loadW > 0 ? Math.ceil(loadW / (PSU_W * PSU_LOADING)) : 0,
+    roof = L.roofY!,
+    behind = -600,
+    psus: Point3[] = Array.from({ length: count }, (_, i) => [
+      (i - (count - 1) / 2) * (PSU_SIZE.w + 40),
+      roof + PSU_SIZE.h / 2 + 50,
+      behind,
+    ]),
+    warnings: string[] = [];
+  if (count) warnings.push('PSUs need a weatherproof (IP65+) enclosure on the roof; plan the roof cable entry and sealing.');
+  if (L.ledcount >= LED_LIMIT) warnings.push(`LED grid capped at ${LED_LIMIT} modules; load is understated.`);
+  const cables: Cable[] = lit.map((e, i) => {
+    const [px, py] = e.leds[0],
+      psu = psus.length ? i % psus.length : 0,
+      [qx, qy, qz] = psus[psu] ?? [px, roof, behind],
+      back = e.parts.find((p) => p.kind === 'back')?.z0 ?? e.base,
+      points: Point3[] = [
+        [px, py, back],
+        [px, py, 0],
+        [px, roof + 30, 0],
+        [px, roof + 30, qz],
+        [qx, qy, qz],
+      ];
+    const length = points
+      .slice(1)
+      .reduce((n, p, j) => n + Math.hypot(...(p.map((v, k) => v - points[j][k]) as Point3)), 0);
+    return { element: e.id, psu, points, length };
+  });
+  return { loadW, psus, cables, warnings };
+}
+
 // Everything the renderer needs: one flat object, read-only.
 export function sceneInput(design: DesignState, view: ViewState) {
   const a = design.artwork;
   return {
     ...view,
-    scenePreset: normalizeScenePreset(view.scenePreset),
+    scenePreset: mountedScenePreset(view.scenePreset, isRooftop(design.settings)),
     settings: design.settings,
     layout: computeLayout(design),
     visibleLayers: visibleLayers(assemblySteps(design), view.step),

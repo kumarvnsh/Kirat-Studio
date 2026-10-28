@@ -1,6 +1,6 @@
 import { StackTable } from './ToolsPanel.tsx';
 import { defaultSettings } from '../domain/project.ts';
-import { getState } from './store.ts';
+import { getState, setView } from './store.ts';
 import { unitToMm } from '../domain/units.ts';
 import { selectionScope } from './selection.ts';
 import { resizeArtwork } from '../editor/resizeArtwork.ts';
@@ -12,7 +12,14 @@ import { kelvinToHex, LED_TEMPS } from '../domain/lighting.ts';
 import { checkParams, recipes, resolveParams, panelIntegrated } from '../domain/recipes.ts';
 import {
   checkSettings,
+  defaultRooftop,
+  isRooftop,
   numericSettings,
+  rooftopLimits,
+  rooftopStructures,
+  ROOFTOP_TYPES,
+  type Mounting,
+  type RooftopStructure,
   type Artwork,
   type ArtworkElement,
   type ArtworkGroup,
@@ -105,17 +112,99 @@ function BoardProps({ a }: { a: Artwork }) {
     if (bad) return say(bad);
     editDesign((d) => ({ ...d, settings: next }), msg, coalesce ? `board-${String(key)}` : undefined);
   };
+  const rooftop = isRooftop(s);
+  // Switching to rooftop moves unsuitable constructions to front-lit and shows the roof scene.
+  const setMounting = (next: Mounting | undefined) => {
+    const settings = { ...s, mounting: next };
+    const bad = checkSettings(settings);
+    if (bad) return say(bad);
+    let moved = 0;
+    editDesign((d) => {
+      let art = d.artwork;
+      if (next && art) {
+        for (const g of art.groups)
+          if (!ROOFTOP_TYPES.includes(g.type)) {
+            art = setGroup(art, g.id, { type: 'front', charDepth: null });
+            moved++;
+          }
+        const odd = art.elements.filter((e) => !ROOFTOP_TYPES.includes(e.type)).map((e) => e.id);
+        if (odd.length) art = setElements(art, odd, { type: 'inherit' });
+        moved += odd.length;
+      }
+      return { ...d, settings, artwork: art };
+    }, next ? 'Rooftop letters: the board is replaced by a steel support structure.' : 'Letters back on an ACP fascia board.');
+    if (moved) say(`Rooftop letters: ${moved} group(s) or letter(s) needed a fascia and are now front-lit channel letters.`);
+    if (next && getState().view.scenePreset !== 'studio') setView({ scenePreset: 'rooftop' });
+  };
+  const setRooftop = (patch: Partial<Mounting>, msg: string, coalesce = true) =>
+    setSetting('mounting', { ...s.mounting!, ...patch }, msg, coalesce);
   return (
     <div className="props">
       <div className="props-title">
-        <Swatch colors={[s.boardcolor]} /> <b>Board structure</b>{' '}
+        <Swatch colors={[s.boardcolor]} /> <b>{rooftop ? 'Rooftop letters' : 'Board structure'}</b>{' '}
         <small>{a.groups.length} groups</small>
       </div>
+      <label>
+        Mounting
+        <select
+          value={rooftop ? 'rooftop' : 'fascia'}
+          onChange={(e) => setMounting(e.target.value === 'rooftop' ? (s.mounting ?? defaultRooftop()) : undefined)}
+        >
+          <option value="fascia">Letters on an ACP fascia board</option>
+          <option value="rooftop">Rooftop letters on a steel structure</option>
+        </select>
+      </label>
+      {rooftop && (
+        <>
+          <label>
+            Support structure
+            <select
+              value={s.mounting!.structure}
+              onChange={(e) =>
+                setRooftop(
+                  { structure: e.target.value as RooftopStructure },
+                  `${rooftopStructures[e.target.value as RooftopStructure]} structure.`,
+                  false,
+                )
+              }
+            >
+              {Object.entries(rooftopStructures).map(([k, v]) => (
+                <option key={k} value={k}>
+                  {v}
+                  {k === 'beam' ? ' · letters on a rail' : k === 'braced' ? ' · post and brace per letter' : ' · truss behind the letters'}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="pair">
+            <ScrubInput
+              label="Letters above roof"
+              min={rooftopLimits.clearance[0]}
+              max={rooftopLimits.clearance[1]}
+              step={10}
+              value={s.mounting!.clearance}
+              onChange={(v, scrubbing) => setRooftop({ clearance: v }, 'Height above roof updated.', scrubbing)}
+            />
+            <ScrubInput
+              label="Max post spacing"
+              min={rooftopLimits.spacing[0]}
+              max={rooftopLimits.spacing[1]}
+              step={50}
+              value={s.mounting!.spacing}
+              onChange={(v, scrubbing) => setRooftop({ spacing: v }, 'Post spacing updated.', scrubbing)}
+            />
+          </div>
+          <p className="muted">
+            {layout.structure.length} members · {layout.feet.length} base plates. A layout guide only: wind
+            load, roof fixing and the steel design need an engineer’s sign-off.
+          </p>
+        </>
+      )}
 
 
       <div className="pair">
         <ScrubInput
-          label="Board width"
+          label={rooftop ? 'Sign width' : 'Board width'}
           min={numericSettings.width.min}
           max={numericSettings.width.max}
           step={numericSettings.width.step}
@@ -124,7 +213,7 @@ function BoardProps({ a }: { a: Artwork }) {
           onInvalid={() => say(`Board width must be between ${numericSettings.width.min} and ${numericSettings.width.max} mm.`)}
         />
         <ScrubInput
-          label="Board height"
+          label={rooftop ? 'Sign height' : 'Board height'}
           min={numericSettings.height.min}
           max={numericSettings.height.max}
           step={numericSettings.height.step}
@@ -160,14 +249,14 @@ function BoardProps({ a }: { a: Artwork }) {
           }
         />
       )}
-      <ColorField
+      {!rooftop && <ColorField
         label="ACP fascia finish"
         value={s.boardcolor}
         fallback="#243843"
         previewColor={s.boardcolor}
         palette={artworkPalette(a)}
         onCommit={(c, live) => setSetting('boardcolor', c ?? '#243843', 'ACP fascia colour updated.', live)}
-      />
+      />}
 
 
       <p className="muted">
@@ -208,7 +297,7 @@ function BoardProps({ a }: { a: Artwork }) {
       </div>
 </details>
       <details className="property-details"><summary>Anatomy &amp; material thicknesses</summary><CrossSectionDiagram settings={s} /></details>
-      <details className="property-details"><summary>Board structure &amp; materials</summary><StackTable settings={s} /><div className="pair">{(['acp','gi','frame','framewall','backing'] as const).map(key => {
+      <details className="property-details"><summary>Board structure &amp; materials</summary><StackTable settings={s} /><div className="pair">{(rooftop ? ['frame','framewall'] as const : ['acp','gi','frame','framewall','backing'] as const).map(key => {
         const r=numericSettings[key]; return <ScrubInput key={key} label={r.label} min={r.min} max={r.max} step={r.step} value={s[key]} onChange={(v,scrubbing)=>setSetting(key,v,r.label+' updated.',scrubbing)} />;
       })}</div><label className="check"><input type="checkbox" checked={s.keepart} onChange={e=>setSetting('keepart',e.target.checked)} />Preserve artwork colours</label><label>Uniform face colour<input type="color" value={s.facecolor} onChange={e=>{const facecolor=e.target.value;editDesign(d=>({...d,settings:{...d.settings,facecolor,keepart:false}}),'Uniform face colour updated.','uniform-face');}} /></label><button className="full" onClick={()=>editDesign(d=>({...d,settings:defaultSettings()}),'Board defaults restored.')}>Reset board defaults</button></details>
     </div>

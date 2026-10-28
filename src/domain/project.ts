@@ -119,11 +119,31 @@ export const numericSettings = {
 } as const;
 export type NumericKey = keyof typeof numericSettings;
 
+// Rooftop letters stand on a steel support structure instead of an ACP fascia board.
+export type RooftopStructure = 'beam' | 'braced' | 'lattice';
+export type Mounting = {
+  kind: 'rooftop';
+  structure: RooftopStructure;
+  clearance: number; // letter bottom above the roof (mm)
+  spacing: number; // maximum post / vertical spacing (mm)
+};
+export const rooftopStructures: Record<RooftopStructure, string> = {
+  beam: 'Box beam',
+  braced: 'Braced posts',
+  lattice: 'Lattice frame',
+};
+export const rooftopLimits = { clearance: [0, 5000], spacing: [400, 4000] } as const;
+export const defaultRooftop = (): Mounting => ({ kind: 'rooftop', structure: 'beam', clearance: 300, spacing: 1200 });
+// Letters that stand on their own. Panel types need a fascia; halo needs a surface to light.
+export const ROOFTOP_TYPES: ConstructionType[] = ['front', 'fullacrylic', 'acrylic', 'metal', 'omit'];
+export const isRooftop = (s: { mounting?: Mounting }) => s.mounting?.kind === 'rooftop';
+
 export type DesignSettings = Record<NumericKey, number> & {
   boardcolor: string;
   facecolor: string;
   keepart: boolean; // preserve artwork colours on faces
   groupSpacing?: number; // extra space between groups (mm)
+  mounting?: Mounting; // unset = letters on an ACP fascia board
 };
 
 export type DesignState = { settings: DesignSettings; artwork: Artwork | null };
@@ -265,5 +285,16 @@ export function checkSettings(s: DesignSettings): string | null {
     (!Number.isFinite(s.groupSpacing) || s.groupSpacing < -1000 || s.groupSpacing > 3000)
   )
     return 'Space between groups must be between -1000 and 3000 mm.';
+  const m = s.mounting;
+  if (m !== undefined) {
+    const within = (v: unknown, [lo, hi]: readonly [number, number]) =>
+      typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi;
+    if (m?.kind !== 'rooftop' || !Object.hasOwn(rooftopStructures, m.structure))
+      return 'Unknown sign mounting.';
+    if (!within(m.clearance, rooftopLimits.clearance))
+      return `Height above roof must be between ${rooftopLimits.clearance[0]} and ${rooftopLimits.clearance[1]} mm.`;
+    if (!within(m.spacing, rooftopLimits.spacing))
+      return `Post spacing must be between ${rooftopLimits.spacing[0]} and ${rooftopLimits.spacing[1]} mm.`;
+  }
   return null;
 }

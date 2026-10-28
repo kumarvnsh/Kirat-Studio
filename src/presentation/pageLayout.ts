@@ -243,7 +243,11 @@ export function layoutBooklet(
         Math.max(
           ...resolvedLayout.elements.flatMap((e) => e.parts.map((p) => p.z1)),
           resolvedLayout.letterBase,
-        ) - Math.min(...resolvedLayout.board.map((b) => b.z0));
+        ) -
+        Math.min(
+          ...resolvedLayout.board.map((b) => b.z0),
+          ...resolvedLayout.structure.flatMap((m) => [m.a[2], m.b[2]]),
+        );
       const details = shot.site
         ? `Board ${formatInUnit(shot.site.board[0], unit)} × ${formatInUnit(shot.site.board[1], unit)} on a ${formatInUnit(shot.site.wall[0], unit)} × ${formatInUnit(shot.site.wall[1], unit)} wall`
         : shot.camera.preset === 'front'

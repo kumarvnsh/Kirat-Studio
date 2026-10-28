@@ -2,12 +2,13 @@ export const scenePresets = {
   studio: 'Studio',
   shopfront: 'Shopfront',
   interior: 'Interior',
+  rooftop: 'Rooftop',
 } as const;
 
 export type ScenePreset = keyof typeof scenePresets;
 
 export function normalizeScenePreset(value: unknown): ScenePreset {
-  return value === 'shopfront' || value === 'interior' ? value : 'studio';
+  return value === 'shopfront' || value === 'interior' || value === 'rooftop' ? value : 'studio';
 }
 
 export function sceneryDimensions(widthMm: number, heightMm: number) {
@@ -24,4 +25,12 @@ export function sceneryDimensions(widthMm: number, heightMm: number) {
     entranceHeight: Math.min(2.2, clearance - 0.3),
     counterHeight: Math.min(1.05, clearance - 0.5),
   };
+}
+
+// Rooftop letters have no wall behind them, and fascia boards don't stand on a roof:
+// a contextual scene follows the sign's mounting.
+export function mountedScenePreset(value: unknown, rooftop: boolean): ScenePreset {
+  const p = normalizeScenePreset(value);
+  if (p === 'studio') return p;
+  return rooftop ? 'rooftop' : p === 'rooftop' ? 'shopfront' : p;
 }

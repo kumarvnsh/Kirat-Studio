@@ -2,6 +2,8 @@ import { panelIntegrated } from '../../domain/recipes.ts';
 import { useState } from 'react';
 import {
   constructionNames,
+  isRooftop,
+  ROOFTOP_TYPES,
   type ConstructionType,
   type DesignState,
 } from '../../domain/project.ts';
@@ -126,7 +128,9 @@ export function OptionsEditor({
               }
             >
               <option value="">Use original · {constructionNames[(element ?? group).type]}</option>
-              {Object.entries(constructionNames).map(([k, v]) => (
+              {Object.entries(constructionNames)
+                .filter(([k]) => !isRooftop(design.settings) || ROOFTOP_TYPES.includes(k as ConstructionType))
+                .map(([k, v]) => (
                 <option key={k} value={k}>
                   {v}
                 </option>

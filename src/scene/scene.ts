@@ -534,6 +534,19 @@ export class SignScene {
       else g.rotateX(Math.PI / 2);
       mesh(g, steel, 'frame', 0).position.set(f.x * M, f.y * M, 0);
     }
+    // Rooftop support structure: the same hollow section, laid along each member.
+    for (const mb of L.structure) {
+      const a = new T.Vector3(...mb.a).multiplyScalar(M),
+        b = new T.Vector3(...mb.b).multiplyScalar(M),
+        len = a.distanceTo(b),
+        g = new T.ExtrudeGeometry(tubeShape, { depth: len, bevelEnabled: false });
+      g.translate(0, 0, -len / 2);
+      const m = mesh(g, steel, 'frame', 0);
+      m.position.copy(a).add(b).multiplyScalar(0.5);
+      m.quaternion.setFromUnitVectors(new T.Vector3(0, 0, 1), b.clone().sub(a).normalize());
+    }
+    for (const [x, y, z] of L.feet)
+      mesh(new T.BoxGeometry(0.2, 0.012, 0.2), steel, 'frame', z * M).position.set(x * M, y * M + 0.006, z * M);
     this.setScene(s);
 
     if (artCanvas) {
@@ -832,12 +845,16 @@ export class SignScene {
   setScene(s: SceneInput) {
     this.state = s;
     const preset = normalizeScenePreset(s.scenePreset);
-    const wallZ = s.layout.board[0].z0 * M - 0.1;
-    const key = [preset, s.settings.width, s.settings.height, wallZ].join(':');
+    // Rooftop letters have no board: a studio backdrop goes behind the deepest kicker instead.
+    const L = s.layout,
+      back = L.board[0]?.z0 ?? Math.min(-s.settings.frame / 2, ...L.structure.flatMap((m) => [m.a[2], m.b[2]])) - 400,
+      wallZ = back * M - 0.1,
+      roofY = (L.roofY ?? -s.settings.height / 2) * M;
+    const key = [preset, s.settings.width, s.settings.height, wallZ, roofY].join(':');
     if (key !== this.sceneryKey || !this.scenery) {
       let next: Scenery;
       try {
-        next = buildScenery(preset, s.settings.width * M, s.settings.height * M, wallZ);
+        next = buildScenery(preset, s.settings.width * M, s.settings.height * M, wallZ, roofY);
       } catch (error) {
         console.error('Unable to build signage scenery', error);
         next = buildScenery('studio', s.settings.width * M, s.settings.height * M, wallZ);
