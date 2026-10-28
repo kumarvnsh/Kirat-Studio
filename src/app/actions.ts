@@ -1,7 +1,8 @@
 // Operations that span panels: importing artwork, opening/saving projects, mode changes, export.
 import { loadImage, traceImage, type TraceOptions } from '../artwork/import.ts';
 import { svgArtwork } from '../artwork/svg.ts';
-import { LAYER_COUNT, type Artwork, type ViewMode } from '../domain/project.ts';
+import { boardArt, type AiArtboard } from '../artwork/ai.ts';
+import { LAYER_COUNT, numericSettings, type Artwork, type ViewMode } from '../domain/project.ts';
 import { ALL_STEPS } from '../domain/assembly.ts';
 import { AUTOSAVE, BACKUP, parseProject, readStore, serialise, writeStore } from '../storage/project.ts';
 import { sceneInput } from '../domain/layout.ts';
@@ -55,16 +56,47 @@ export function importSvg(text: string) {
   retrace();
 }
 
+// Board size from an Illustrator artboard, applied once with the import (not on later retraces).
+let pendingBoard: { width: number; height: number; artscale: number; note: string } | null = null;
+
+export function importAiBoard(b: AiArtboard, exclude: number[] = []) {
+  const art = boardArt(b, exclude);
+  const clamp = (k: 'width' | 'height' | 'artscale', v: number) => {
+    const r = numericSettings[k];
+    return Math.min(r.max, Math.max(r.min, Math.round(v)));
+  };
+  const width = clamp('width', b.widthMm),
+    height = clamp('height', b.heightMm),
+    artscale = clamp('artscale', (art.artWidthMm / b.widthMm) * 100);
+  const capped = width !== Math.round(b.widthMm) || height !== Math.round(b.heightMm);
+  pendingBoard = {
+    width,
+    height,
+    artscale,
+    note:
+      `Board set from artboard ${b.index + 1}: ${width} × ${height} mm, artwork ${Math.round(art.artWidthMm)} × ${Math.round(art.artHeightMm)} mm. ` +
+      (exclude.length ? `Left out ${exclude.length} shape(s) (size labels and anything you removed). ` : '') +
+      (capped ? `Artboard is ${Math.round(b.widthMm)} × ${Math.round(b.heightMm)} mm, outside the board limits, so it was capped. ` : '') +
+      (art.artHeightMm > height * 0.75 ? 'Artwork is taller than 75% of the board, so it is scaled down to fit. ' : '') +
+      (b.strokes + b.skipped
+        ? `${b.strokes + b.skipped} stroke(s), text or image(s) skipped: outline them in Illustrator to include them. `
+        : ''),
+  };
+  importSvg(art.svg);
+}
+
 // Re-importing replaces the artwork as one undoable design edit.
 export async function retrace(useBackground = false) {
   if (!source) {
     const vector = getState().design.present.artwork?.origin === 'vector';
     return say(
       vector
-        ? 'Vector artwork has nothing to retrace. Upload the SVG again to re-import it.'
+        ? 'Vector artwork has nothing to retrace. Upload the SVG or AI file again to re-import it.'
         : 'Upload artwork or load the Kirat sample first.',
     );
   }
+  const board = pendingBoard;
+  pendingBoard = null; // a failed import must not resize the board on the next one
   try {
     let artwork: Artwork, note: string, fasciaColor: string | undefined;
     if ('svg' in source) {
@@ -88,8 +120,16 @@ export async function retrace(useBackground = false) {
     }
     const holes = artwork.elements.reduce((n, e) => n + e.regions.reduce((m, r) => m + r.holes.length, 0), 0);
     editDesign(
-      (d) => ({ ...d, artwork, ...(fasciaColor ? { settings: { ...d.settings, boardcolor: fasciaColor } } : {}) }),
-      `${artwork.elements.length} shapes · ${holes} holes · ${artwork.groups.length} groups. ${note}Review groups in the inspector.`,
+      (d) => ({
+        ...d,
+        artwork,
+        settings: {
+          ...d.settings,
+          ...(fasciaColor ? { boardcolor: fasciaColor } : {}),
+          ...(board ? { width: board.width, height: board.height, artscale: board.artscale } : {}),
+        },
+      }),
+      `${artwork.elements.length} shapes · ${holes} holes · ${artwork.groups.length} groups. ${board?.note ?? ''}${note}Review groups in the inspector.`,
     );
     setView({
       selected: null,
