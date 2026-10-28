@@ -28,6 +28,7 @@ export type AiArtboard = {
   heightMm: number;
   paths: AiPath[]; // filled shapes in mm, artboard top-left origin
   strokes: number; // stroked lines (often dimension lines), not imported
+  background?: string; // fill of a board rectangle drawn behind the artwork (the ACP colour)
   skipped: number; // text and images the import can't use
 };
 
@@ -254,7 +255,21 @@ function artboard(doc: PDFDocument, page: PDFPage, index: number, hiddenLayers: 
     .join('\n');
   run(src, page.node.Resources(), base, 0);
 
-  return { index, widthMm: box.width * mm, heightMm: box.height * mm, paths, strokes, skipped };
+  // A board drawn behind the logo: the first shape, enclosing nearly all the others. It gives the
+  // ACP colour and is not imported as a shape.
+  const [first, ...rest] = paths,
+    inside = (b: AiPath['bounds']) =>
+      b[0] >= first.bounds[0] - 0.5 && b[1] >= first.bounds[1] - 0.5 && b[2] <= first.bounds[2] + 0.5 && b[3] <= first.bounds[3] + 0.5;
+  const board = rest.length >= 2 && rest.filter((p) => inside(p.bounds)).length >= rest.length * 0.9;
+  return {
+    index,
+    widthMm: box.width * mm,
+    heightMm: box.height * mm,
+    paths: board ? rest : paths,
+    strokes,
+    skipped,
+    ...(board ? { background: first.fill } : {}),
+  };
 }
 
 export const boardColours = (b: AiArtboard) => [...new Set(b.paths.map((p) => p.fill))];

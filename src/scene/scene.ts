@@ -205,7 +205,8 @@ export class SignScene {
     this.onSelect = onSelect;
     this.onSceneError = onSceneError;
     // Tone mapping comes from the effect chain; renderer antialiasing stays disabled.
-    this.renderer = new T.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
+    // Offscreen renders keep alpha so site mockups can composite the sign onto a photo.
+    this.renderer = new T.WebGLRenderer({ antialias: false, powerPreference: 'high-performance', alpha: !!options.offscreen });
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = T.PCFSoftShadowMap;

@@ -244,8 +244,9 @@ export function layoutBooklet(
           ...resolvedLayout.elements.flatMap((e) => e.parts.map((p) => p.z1)),
           resolvedLayout.letterBase,
         ) - Math.min(...resolvedLayout.board.map((b) => b.z0));
-      const details =
-        shot.camera.preset === 'front'
+      const details = shot.site
+        ? `Board ${formatInUnit(shot.site.board[0], unit)} × ${formatInUnit(shot.site.board[1], unit)} on a ${formatInUnit(shot.site.wall[0], unit)} × ${formatInUnit(shot.site.wall[1], unit)} wall`
+        : shot.camera.preset === 'front'
           ? `Width ${formatInUnit(design.settings.width, unit)} × Height ${formatInUnit(design.settings.height, unit)}`
           : `Board ${formatInUnit(design.settings.width, unit)} × ${formatInUnit(design.settings.height, unit)} · Assembly depth ${formatInUnit(depth, unit)}`;
       state.page.items.push({ kind: 'line', x: 30, y: 171, x2: 267, y2: 171 });

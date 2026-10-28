@@ -10,6 +10,11 @@ export function createPresentationSnapshot(
   const copy = applyOption(design, option),
     s = structuredClone(shot);
   if (s.camera.preset === 'exploded') s.scene.kind = 'studio';
+  // A site mockup builds the sign at that place's board size, on its own (the photo is the scene).
+  if (s.site) {
+    [copy.settings.width, copy.settings.height] = s.site.board;
+    s.scene.kind = 'studio';
+  }
   const input = sceneInput(copy, {
     ...defaultView(),
     mode: '3d',

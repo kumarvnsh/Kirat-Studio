@@ -57,9 +57,9 @@ export function importSvg(text: string) {
 }
 
 // Board size from an Illustrator artboard, applied once with the import (not on later retraces).
-let pendingBoard: { width: number; height: number; artscale: number; note: string } | null = null;
+let pendingBoard: { width: number; height: number; artscale: number; boardcolor?: string; note: string } | null = null;
 
-export function importAiBoard(b: AiArtboard, exclude: number[] = []) {
+export function importAiBoard(b: AiArtboard, exclude: number[] = [], useBackground = true) {
   const art = boardArt(b, exclude);
   const clamp = (k: 'width' | 'height' | 'artscale', v: number) => {
     const r = numericSettings[k];
@@ -69,12 +69,15 @@ export function importAiBoard(b: AiArtboard, exclude: number[] = []) {
     height = clamp('height', b.heightMm),
     artscale = clamp('artscale', (art.artWidthMm / b.widthMm) * 100);
   const capped = width !== Math.round(b.widthMm) || height !== Math.round(b.heightMm);
+  const boardcolor = useBackground ? b.background : undefined;
   pendingBoard = {
     width,
     height,
     artscale,
+    boardcolor,
     note:
       `Board set from artboard ${b.index + 1}: ${width} × ${height} mm, artwork ${Math.round(art.artWidthMm)} × ${Math.round(art.artHeightMm)} mm. ` +
+      (boardcolor ? `ACP board colour ${boardcolor} from the file. ` : '') +
       (exclude.length ? `Left out ${exclude.length} shape(s) (size labels and anything you removed). ` : '') +
       (capped ? `Artboard is ${Math.round(b.widthMm)} × ${Math.round(b.heightMm)} mm, outside the board limits, so it was capped. ` : '') +
       (art.artHeightMm > height * 0.75 ? 'Artwork is taller than 75% of the board, so it is scaled down to fit. ' : '') +
@@ -127,6 +130,7 @@ export async function retrace(useBackground = false) {
           ...d.settings,
           ...(fasciaColor ? { boardcolor: fasciaColor } : {}),
           ...(board ? { width: board.width, height: board.height, artscale: board.artscale } : {}),
+          ...(board?.boardcolor ? { boardcolor: board.boardcolor } : {}),
         },
       }),
       `${artwork.elements.length} shapes · ${holes} holes · ${artwork.groups.length} groups. ${board?.note ?? ''}${note}Review groups in the inspector.`,

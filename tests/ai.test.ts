@@ -66,3 +66,20 @@ test('callout labels in any colour are caught, but a logo with only small shapes
   plain.addPage([1000, 400]).drawRectangle({ x: 100, y: 100, width: 600, height: 200, color: rgb(0, 0, 0) });
   assert.deepEqual(suggestedExclude((await readAi(await plain.save())).boards[0]), [], 'no lines, no guess');
 });
+
+test('a board rectangle behind the logo gives the ACP colour and is not imported', async () => {
+  const doc = await PDFDocument.create();
+  const page = doc.addPage([1000, 400]);
+  page.drawRectangle({ x: 0, y: 0, width: 1000, height: 400, color: rgb(1, 1, 1) }); // white ACP
+  page.drawRectangle({ x: 100, y: 100, width: 300, height: 200, color: rgb(0, 0, 1) });
+  page.drawRectangle({ x: 500, y: 100, width: 300, height: 200, color: rgb(0, 0, 1) });
+  const [b] = (await readAi(await doc.save())).boards;
+  assert.equal(b.background, '#ffffff');
+  assert.equal(b.paths.length, 2);
+
+  const logoOnly = await PDFDocument.create();
+  const p2 = logoOnly.addPage([1000, 400]);
+  p2.drawRectangle({ x: 100, y: 100, width: 300, height: 200, color: rgb(0, 0, 1) });
+  p2.drawRectangle({ x: 500, y: 100, width: 300, height: 200, color: rgb(0, 0, 1) });
+  assert.equal((await readAi(await logoOnly.save())).boards[0].background, undefined);
+});
