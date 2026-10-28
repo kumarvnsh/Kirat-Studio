@@ -9,9 +9,10 @@ import { resizeArtwork } from '../editor/resizeArtwork.ts';
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { computeLayout, type ElementLayout } from '../domain/layout.ts';
 import { kelvinToHex, LED_TEMPS } from '../domain/lighting.ts';
-import { checkParams, recipes, resolveParams, panelIntegrated } from '../domain/recipes.ts';
+import { checkParams, frontLit, recipes, resolveParams, panelIntegrated } from '../domain/recipes.ts';
 import {
   checkSettings,
+  DAY_NIGHT_COLOUR,
   defaultRooftop,
   isRooftop,
   numericSettings,
@@ -457,11 +458,47 @@ function GroupProps({ a, g }: { a: Artwork; g: ArtworkGroup }) {
           )
         }
       />
+      {frontLit(g.type) && (
+        <label className="check" title="Perforated day/night film over the opal face">
+          <input
+            type="checkbox"
+            checked={!!g.dayNight}
+            onChange={(e) =>
+              editArtwork(
+                (x) => setGroup(x, g.id, { dayNight: e.target.checked }),
+                e.target.checked
+                  ? `${g.name}: day/night face. It shows the face colour by day and lights white at night.`
+                  : `${g.name}: plain lit face.`,
+              )
+            }
+          />
+          Day/night face · dark by day, white when lit at night
+        </label>
+      )}
       <ColorField
-        label={g.type === 'halo' || g.type === 'metal' ? 'Face colour (painted)' : 'Face colour'}
+        label={
+          g.dayNight && frontLit(g.type)
+            ? 'Day colour (film)'
+            : g.type === 'halo' || g.type === 'metal'
+              ? 'Face colour (painted)'
+              : 'Face colour'
+        }
         value={g.faceColor}
-        fallback={g.type === 'halo' || g.type === 'metal' ? 'Bare metal' : 'Artwork colours'}
-        previewColor={g.faceColor ?? (g.type === 'halo' || g.type === 'metal' ? '#c8d1d5' : firstArtHex)}
+        fallback={
+          g.dayNight && frontLit(g.type)
+            ? `Black ${DAY_NIGHT_COLOUR}`
+            : g.type === 'halo' || g.type === 'metal'
+              ? 'Bare metal'
+              : 'Artwork colours'
+        }
+        previewColor={
+          g.faceColor ??
+          (g.dayNight && frontLit(g.type)
+            ? DAY_NIGHT_COLOUR
+            : g.type === 'halo' || g.type === 'metal'
+              ? '#c8d1d5'
+              : firstArtHex)
+        }
         autoColors={grpCols}
         palette={artworkPalette(a)}
         onCommit={(c, live) =>

@@ -195,6 +195,7 @@ function validateArtwork(a: Artwork) {
       (g.params !== undefined && (typeof g.params !== 'object' || checkParams(g.type, g.params))) ||
       !optColour(g.faceColor) ||
       !optColour(g.returnColor) ||
+      (g.dayNight !== undefined && typeof g.dayNight !== 'boolean') ||
       (g.light !== undefined && (typeof g.light !== 'object' || checkLight(g.light) !== null))
     )
       throw Error(

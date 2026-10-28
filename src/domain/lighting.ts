@@ -74,6 +74,10 @@ export const FACE_EMISSION = 2.2;
 export const BLOOM_THRESHOLD = 1.1;
 
 export const emission = (power: boolean, dimming: number) => (power ? FACE_EMISSION * dimming : 0);
+// How much of a day/night face's light shows: in daylight the dark film's reflection swamps the
+// LEDs behind it, so the face reads as its day colour; after dark the white light comes through.
+export const dayNightShow: Record<Environment, number> = { day: 0.04, dusk: 0.7, night: 1 };
+
 export const cameraExposure = (env: Environment, ev: number) => environments[env].exposure * 2 ** ev;
 
 export const LED_TEMPS = [2700, 3000, 4000, 5000, 6500] as const;

@@ -66,6 +66,9 @@ export type ArtworkGroup = {
   params?: Record<string, number>;
   faceColor?: string; // face / flat colour for the group; unset = artwork colours or board default
   returnColor?: string; // painted return colour (lit letters); unset = natural metal
+  // Day/night face film (front-lit only): the face shows faceColor (default near-black) in
+  // daylight and transmits the LED white when lit after dark.
+  dayNight?: boolean;
   light?: GroupLight; // lit constructions only; unset fields follow the board defaults
   charHeight?: number; // nominal character height for the group (mm)
   charWidth?: number; // nominal character width for the group (mm)
@@ -136,6 +139,8 @@ export const rooftopLimits = { clearance: [0, 5000], spacing: [400, 4000] } as c
 export const defaultRooftop = (): Mounting => ({ kind: 'rooftop', structure: 'beam', clearance: 300, spacing: 1200 });
 // Letters that stand on their own. Panel types need a fascia; halo needs a surface to light.
 export const ROOFTOP_TYPES: ConstructionType[] = ['front', 'fullacrylic', 'acrylic', 'metal', 'omit'];
+// Day colour of a day/night face when the group has no face colour of its own.
+export const DAY_NIGHT_COLOUR = '#161616';
 export const isRooftop = (s: { mounting?: Mounting }) => s.mounting?.kind === 'rooftop';
 
 export type DesignSettings = Record<NumericKey, number> & {

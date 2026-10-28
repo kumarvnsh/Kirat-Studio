@@ -81,6 +81,7 @@ export type GroupPatch = {
   returnColor?: string | null;
   params?: Record<string, number>;
   light?: GroupLight | null; // merged into the group's light; null resets to board defaults
+  dayNight?: boolean;
   charHeight?: number | null;
   charWidth?: number | null;
   charDepth?: number | null;
@@ -114,6 +115,8 @@ export function setGroup(a: Artwork, id: string, patch: GroupPatch): Artwork {
     delete g.params; // params belong to the previous recipe
   }
   if (patch.params) g.params = { ...g.params, ...patch.params };
+  if (patch.dayNight === false) delete g.dayNight;
+  else if (patch.dayNight) g.dayNight = true;
   if (patch.light === null) delete g.light;
   else if (patch.light) {
     const light = { ...g.light, ...patch.light },

@@ -14,7 +14,7 @@ import {
   ToneMappingEffect,
   ToneMappingMode,
 } from 'postprocessing';
-import { BLOOM_THRESHOLD, cameraExposure, emission, environments, kelvinToHex } from '../domain/lighting.ts';
+import { BLOOM_THRESHOLD, cameraExposure, dayNightShow, emission, environments, kelvinToHex } from '../domain/lighting.ts';
 import { bentPath } from '../artwork/contours.js';
 import { LAYERS, type LayerId, type Point, type Region } from '../domain/project.ts';
 import { LED_SIZE, type ElementLayout, type LetterPart, type SceneInput } from '../domain/layout.ts';
@@ -646,19 +646,24 @@ export class SignScene {
     const light = e.light,
       matchArt = light?.mode === 'artwork',
       ledColour = matchArt ? '#ffffff' : (light?.color ?? kelvinToHex(st.ledTemp)),
+      dayNight = !!e.dayNight,
       glowOf = (cur: SceneInput) =>
-        emission(cur.lights !== false && (light?.on ?? true), cur.dimming * (light?.dimming ?? 1)),
+        emission(cur.lights !== false && (light?.on ?? true), cur.dimming * (light?.dimming ?? 1)) *
+        (dayNight ? dayNightShow[cur.environment] : 1),
       glow = glowOf(s),
       emitArt = matchArt ? !!(st.keepart && this.texture) : !!art,
       emitBase = matchArt ? (emitArt ? '#ffffff' : light!.color) : base;
     // Bare stainless unless a colour is chosen, then painted metal.
     const metalFace = () => (e.faceColor ? this.finish('painted', e.faceColor) : this.finish('stainless'));
     const faceMat = () => {
-      const m = this.finish('acrylic', base) as T.MeshPhysicalMaterial;
+      // A day/night face is satin film over the acrylic, so it reads as its dark colour by day
+      // instead of mirroring the sky like a glossy face.
+      const m = this.finish(dayNight ? 'vinyl' : 'acrylic', base) as T.MeshPhysicalMaterial;
       if (art) m.map = this.texture;
       if (frontLit(e.type)) {
         // Light through the face = LED colour × face colour (artwork texture or uniform colour).
-        m.emissive.set(ledColour).multiply(new T.Color(emitBase));
+        // A day/night film's colour only shows in reflection: lit, it passes the LED white.
+        m.emissive.set(ledColour).multiply(new T.Color(dayNight ? '#ffffff' : emitBase));
         m.emissiveIntensity = glow;
         if (emitArt) m.emissiveMap = this.texture;
         this.lightUpdaters.push((cur) => {
@@ -724,7 +729,7 @@ export class SignScene {
       // Full acrylic letters glow through their sides; metal returns stay dark.
       if (e.type === 'fullacrylic') {
         const m = this.finish('acrylic', base) as T.MeshPhysicalMaterial;
-        m.emissive.set(ledColour).multiply(new T.Color(matchArt ? light!.color : base));
+        m.emissive.set(ledColour).multiply(new T.Color(matchArt ? light!.color : dayNight ? '#ffffff' : base));
         m.emissiveIntensity = glow * 0.6; // sides pass less light than the face
         this.lightUpdaters.push((cur) => {
           m.emissiveIntensity = glowOf(cur) * 0.6;
