@@ -14,7 +14,7 @@ import {
   ToneMappingEffect,
   ToneMappingMode,
 } from 'postprocessing';
-import { BLOOM_THRESHOLD, cameraExposure, emission, environments, kelvinToHex } from '../domain/lighting.ts';
+import { BLOOM_THRESHOLD, cameraExposure, dayNightShow, emission, environments, kelvinToHex } from '../domain/lighting.ts';
 import { bentPath } from '../artwork/contours.js';
 import { LAYERS, type LayerId, type Point, type Region } from '../domain/project.ts';
 import { LED_SIZE, type ElementLayout, type LetterPart, type SceneInput } from '../domain/layout.ts';
@@ -534,6 +534,19 @@ export class SignScene {
       else g.rotateX(Math.PI / 2);
       mesh(g, steel, 'frame', 0).position.set(f.x * M, f.y * M, 0);
     }
+    // Rooftop support structure: the same hollow section, laid along each member.
+    for (const mb of L.structure) {
+      const a = new T.Vector3(...mb.a).multiplyScalar(M),
+        b = new T.Vector3(...mb.b).multiplyScalar(M),
+        len = a.distanceTo(b),
+        g = new T.ExtrudeGeometry(tubeShape, { depth: len, bevelEnabled: false });
+      g.translate(0, 0, -len / 2);
+      const m = mesh(g, steel, 'frame', 0);
+      m.position.copy(a).add(b).multiplyScalar(0.5);
+      m.quaternion.setFromUnitVectors(new T.Vector3(0, 0, 1), b.clone().sub(a).normalize());
+    }
+    for (const [x, y, z] of L.feet)
+      mesh(new T.BoxGeometry(0.2, 0.012, 0.2), steel, 'frame', z * M).position.set(x * M, y * M + 0.006, z * M);
     this.setScene(s);
 
     if (artCanvas) {
@@ -633,19 +646,24 @@ export class SignScene {
     const light = e.light,
       matchArt = light?.mode === 'artwork',
       ledColour = matchArt ? '#ffffff' : (light?.color ?? kelvinToHex(st.ledTemp)),
+      dayNight = !!e.dayNight,
       glowOf = (cur: SceneInput) =>
-        emission(cur.lights !== false && (light?.on ?? true), cur.dimming * (light?.dimming ?? 1)),
+        emission(cur.lights !== false && (light?.on ?? true), cur.dimming * (light?.dimming ?? 1)) *
+        (dayNight ? dayNightShow[cur.environment] : 1),
       glow = glowOf(s),
       emitArt = matchArt ? !!(st.keepart && this.texture) : !!art,
       emitBase = matchArt ? (emitArt ? '#ffffff' : light!.color) : base;
     // Bare stainless unless a colour is chosen, then painted metal.
     const metalFace = () => (e.faceColor ? this.finish('painted', e.faceColor) : this.finish('stainless'));
     const faceMat = () => {
-      const m = this.finish('acrylic', base) as T.MeshPhysicalMaterial;
+      // A day/night face is satin film over the acrylic, so it reads as its dark colour by day
+      // instead of mirroring the sky like a glossy face.
+      const m = this.finish(dayNight ? 'vinyl' : 'acrylic', base) as T.MeshPhysicalMaterial;
       if (art) m.map = this.texture;
       if (frontLit(e.type)) {
         // Light through the face = LED colour × face colour (artwork texture or uniform colour).
-        m.emissive.set(ledColour).multiply(new T.Color(emitBase));
+        // A day/night film's colour only shows in reflection: lit, it passes the LED white.
+        m.emissive.set(ledColour).multiply(new T.Color(dayNight ? '#ffffff' : emitBase));
         m.emissiveIntensity = glow;
         if (emitArt) m.emissiveMap = this.texture;
         this.lightUpdaters.push((cur) => {
@@ -711,7 +729,7 @@ export class SignScene {
       // Full acrylic letters glow through their sides; metal returns stay dark.
       if (e.type === 'fullacrylic') {
         const m = this.finish('acrylic', base) as T.MeshPhysicalMaterial;
-        m.emissive.set(ledColour).multiply(new T.Color(matchArt ? light!.color : base));
+        m.emissive.set(ledColour).multiply(new T.Color(matchArt ? light!.color : dayNight ? '#ffffff' : base));
         m.emissiveIntensity = glow * 0.6; // sides pass less light than the face
         this.lightUpdaters.push((cur) => {
           m.emissiveIntensity = glowOf(cur) * 0.6;
@@ -832,12 +850,16 @@ export class SignScene {
   setScene(s: SceneInput) {
     this.state = s;
     const preset = normalizeScenePreset(s.scenePreset);
-    const wallZ = s.layout.board[0].z0 * M - 0.1;
-    const key = [preset, s.settings.width, s.settings.height, wallZ].join(':');
+    // Rooftop letters have no board: a studio backdrop goes behind the deepest kicker instead.
+    const L = s.layout,
+      back = L.board[0]?.z0 ?? Math.min(-s.settings.frame / 2, ...L.structure.flatMap((m) => [m.a[2], m.b[2]])) - 400,
+      wallZ = back * M - 0.1,
+      roofY = (L.roofY ?? -s.settings.height / 2) * M;
+    const key = [preset, s.settings.width, s.settings.height, wallZ, roofY].join(':');
     if (key !== this.sceneryKey || !this.scenery) {
       let next: Scenery;
       try {
-        next = buildScenery(preset, s.settings.width * M, s.settings.height * M, wallZ);
+        next = buildScenery(preset, s.settings.width * M, s.settings.height * M, wallZ, roofY);
       } catch (error) {
         console.error('Unable to build signage scenery', error);
         next = buildScenery('studio', s.settings.width * M, s.settings.height * M, wallZ);

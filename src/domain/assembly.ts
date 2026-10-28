@@ -1,7 +1,7 @@
 // Assembly sequence: dependency-ordered steps, each revealing assembly layers and listing its parts.
 // Explanatory sequence for planning, not an approved workshop procedure.
 import { panelIntegrated } from './recipes.ts';
-import type { DesignState, LayerId } from './project.ts';
+import { isRooftop, type DesignState, type LayerId } from './project.ts';
 
 export type AssemblyStep = {
   id: string;
@@ -105,6 +105,27 @@ export function assemblySteps(design: DesignState): AssemblyStep[] {
       adds: [],
     },
   ];
+  if (isRooftop(design.settings)) {
+    // No board: the steel structure replaces frame, GI, backing and fascia.
+    const rooftop = steps.filter((st) => !['gi', 'backing', 'acp'].includes(st.id));
+    for (const st of rooftop) {
+      if (st.id === 'frame') {
+        st.title = 'Fabricate rooftop structure';
+        st.description =
+          'Cut, weld and galvanise the support members; fix base plates to the roof to the engineer’s design and seal every roof penetration.';
+      }
+      if (st.id === 'mount') {
+        st.dependsOn = ['frame', 'faces'];
+        st.description = 'Bolt each letter back to its uprights with studs; seal the cable glands at the letter backs.';
+      }
+      if (st.id === 'power') {
+        st.dependsOn = ['mount'];
+        st.description =
+          'Fit PSUs in a weatherproof enclosure on the roof, run cables down the structure and across the roof. Electrical work by a qualified person.';
+      }
+    }
+    return rooftop;
+  }
   const integrated = design.artwork?.elements.some((e) => panelIntegrated(e.type));
   if (integrated)
     for (const step of steps) {

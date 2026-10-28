@@ -29,7 +29,8 @@ export function disposeScenery(scenery: Scenery) {
   disposeGroup(scenery.group);
 }
 
-export function buildScenery(preset: ScenePreset, width: number, height: number, wallZ: number): Scenery {
+// `roofY` (rooftop only): roof surface height in metres, sign centre at the origin.
+export function buildScenery(preset: ScenePreset, width: number, height: number, wallZ: number, roofY = -height / 2): Scenery {
   const group = new T.Group();
   group.name = 'installation-scenery';
   const addMesh = <G extends T.BufferGeometry>(geometry: G, parameters: T.MeshStandardMaterialParameters) => {
@@ -46,6 +47,7 @@ export function buildScenery(preset: ScenePreset, width: number, height: number,
     }
   };
   try {
+    if (preset === 'rooftop') return rooftopScenery(group, addMesh, width, height, roofY);
     const d = sceneryDimensions(width * 1000, height * 1000);
     const contextual = preset !== 'studio';
     const wallWidth = contextual ? d.facadeWidth : Math.max(width * 2, 10);
@@ -124,4 +126,42 @@ export function contextFrame(bounds: T.Box3, aspect: number, fov: number, direct
   }
   const radius = bounds.getSize(new T.Vector3()).length() / 2;
   return { center, position: center.clone().addScaledVector(dir, distance), distance, near: .05, far: Math.max(35, distance + radius * 3) };
+}
+
+// A flat roof at the top of a building: facade with windows, roof slab and a coping at the
+// front edge. The sign stands on the roof just behind the coping.
+function rooftopScenery(
+  group: T.Group,
+  addMesh: <G extends T.BufferGeometry>(geometry: G, parameters: T.MeshStandardMaterialParameters) => T.Mesh<G, T.MeshStandardMaterial>,
+  width: number,
+  height: number,
+  roofY: number,
+): Scenery {
+  const fw = Math.max(8, width * 1.5),
+    front = 1.1, // building edge, in front of the sign
+    storey = 3.2;
+  const wall = addMesh(new T.PlaneGeometry(fw, storey * 2), { color: '#d9d2c4', roughness: 0.95 });
+  wall.name = 'facade';
+  wall.position.set(0, roofY - 0.35 - storey, front);
+  wall.receiveShadow = true;
+  const box = (name: string, w: number, h: number, depth: number, x: number, y: number, z: number, color: string, roughness = 0.9) => {
+    const mesh = addMesh(new T.BoxGeometry(w, h, depth), { color, roughness });
+    mesh.name = name;
+    mesh.position.set(x, y, z);
+    mesh.receiveShadow = true;
+    return mesh;
+  };
+  box('roof', fw, 0.35, 12, 0, roofY - 0.175, front - 6, '#8f9592', 1);
+  box('coping', fw, 0.12, 0.26, 0, roofY + 0.06, front - 0.13, '#cfc7b8');
+  box('cornice', fw + 0.1, 0.12, 0.3, 0, roofY - 0.4, front + 0.05, '#bdb5a6');
+  for (let row = 0; row < 2; row++)
+    for (let x = -fw / 2 + 1.2; x < fw / 2 - 0.6; x += 2.2)
+      box('window', 1.2, 1.5, 0.05, x + 0.3, roofY - 1.6 - row * storey, front + 0.03, '#2b3c45', 0.25);
+  const roomLight = new T.DirectionalLight('#fff0d8', 0);
+  group.add(roomLight, roomLight.target);
+  const frameBounds = new T.Box3(
+    new T.Vector3(-Math.max(width * 0.65, 2.5), roofY - 1.2, -1.5),
+    new T.Vector3(Math.max(width * 0.65, 2.5), Math.max(height / 2, roofY + 0.5) + 0.4, front + 0.3),
+  );
+  return { group, wall, roomLight, frameBounds };
 }
