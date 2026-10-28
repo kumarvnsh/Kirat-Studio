@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import { useApp, useDesign, useView, setPresentation, getState } from '../store.ts';
 import { viewer } from '../actions.ts';
 import {
@@ -17,6 +17,8 @@ import { PagePreview } from './PagePreview.tsx';
 import { ExportDialog } from './ExportDialog.tsx';
 import { OptionsEditor } from './OptionsEditor.tsx';
 import { PageSelection } from './PageSelection.tsx';
+import type { SiteSlide } from '../../presentation/site.ts';
+import { addSiteSlides, readSiteFile, SiteSetup, SiteStage, SlidePicker } from './SiteMockup.tsx';
 import { selectedShots } from '../../presentation/selection.ts';
 import { duplicateOption, removeOption } from '../../presentation/options.ts';
 import './presentation.css';
@@ -34,6 +36,9 @@ export function PresentationWorkspace() {
     [error, setError] = useState(''),
     [fontRetry, setFontRetry] = useState(0);
   const [batchIds, setBatchIds] = useState<string[]>([]);
+  const [siteSlides, setSiteSlides] = useState<SiteSlide[] | null>(null);
+  const [siteNote, setSiteNote] = useState(''),
+    siteInput = useId();
   const batch = selectedShots(config, batchIds);
   const shot = config.shots.find((s) => s.id === selectedShot) ?? config.shots[0];
   const option = config.options.find((o) => o.id === shot?.optionId) ?? config.options[0];
@@ -175,6 +180,26 @@ export function PresentationWorkspace() {
       setError((e as Error).message);
     }
   }
+  async function addSites(slides: SiteSlide[]) {
+    try {
+      const r = await addSiteSlides(slides, getState().presentation, design, option.id);
+      setPresentation(r.next);
+      setSelectedShot(r.first);
+      setSiteNote(r.note);
+      setError('');
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+  const removeShot = (id: string) => {
+    const next = {
+      ...config,
+      shots: config.shots.filter((s) => s.id !== id),
+      pages: config.pages.filter((p) => p.shotId !== id),
+    };
+    setPresentation(next);
+    setSelectedShot(next.shots.find((s) => s.optionId === option.id)?.id ?? next.shots[0]?.id ?? '');
+  };
   const metadata = (
     <section className="booklet-metadata">
       <div className="booklet-section-label">PROJECT DETAILS</div>
@@ -255,6 +280,36 @@ export function PresentationWorkspace() {
   );
   return (
     <section className="client-workspace" aria-label="Client presentation">
+      {siteSlides && (
+        <SlidePicker
+          slides={siteSlides}
+          onClose={() => setSiteSlides(null)}
+          onAdd={(chosen) => {
+            setSiteSlides(null);
+            void addSites(chosen);
+          }}
+        />
+      )}
+      <input
+        id={siteInput}
+        type="file"
+        hidden
+        accept=".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation,image/jpeg,image/png"
+        disabled={renders.busy}
+        onChange={async (e) => {
+          const f = e.target.files?.[0];
+          e.target.value = '';
+          if (!f) return;
+          try {
+            const slides = await readSiteFile(f);
+            // A deck with several slides: let the user choose which to show.
+            if (slides.length > 1) setSiteSlides(slides);
+            else await addSites(slides);
+          } catch (err) {
+            setError((err as Error).message);
+          }
+        }}
+      />
       <div className="booklet-heading">
         <div>
           <span className="booklet-section-label">CLIENT PRESENTATION</span>
@@ -313,6 +368,12 @@ export function PresentationWorkspace() {
                   Remove option & pages
                 </button>
               </div>
+              <div className="booklet-section-label">ON SITE</div>
+              <label className="site-upload" htmlFor={siteInput}>
+                ＋ Site photo or recce PPT
+                <small>See the sign on the real wall · .pptx, JPG or PNG</small>
+              </label>
+              {siteNote && <p className="booklet-hint">{siteNote}</p>}
               <div className="booklet-section-label">VIEWS & LIGHTING</div>
               <div className="booklet-buttons">
                 <button
@@ -393,7 +454,14 @@ export function PresentationWorkspace() {
                 </span>
               </div>
               <div className="booklet-render-image">
-                {asset ? (
+                {shot?.site ? (
+                  <SiteStage
+                    key={shot.id}
+                    shot={shot}
+                    image={asset?.url}
+                    onCorners={(corners) => change({ site: { ...shot.site!, corners } })}
+                  />
+                ) : asset ? (
                   <img src={asset.url} alt={`${shot?.name} signage ${asset.quality}`} />
                 ) : (
                   <div className="booklet-empty">
@@ -443,6 +511,9 @@ export function PresentationWorkspace() {
                 >
                   Render booklet views
                 </button>
+                <label className="site-upload-button" htmlFor={siteInput}>
+                  ＋ Site photo / PPT
+                </label>
               </div>
               <p className="booklet-hint">
                 Final renders calculate light and reflections progressively. Timing depends on your
@@ -497,6 +568,15 @@ export function PresentationWorkspace() {
         <aside className="booklet-right">
           {step === 'prepare' && shot ? (
             <>
+              {shot.site && (
+                <SiteSetup
+                  shot={shot}
+                  onChange={change}
+                  onRemove={() => {
+                    if (confirm(`Remove ${shot.name} and its booklet page?`)) removeShot(shot.id);
+                  }}
+                />
+              )}
               <OptionsEditor
                 key={option.id}
                 option={option}
@@ -508,10 +588,12 @@ export function PresentationWorkspace() {
                   })
                 }
               />
-              <details className="shot-settings-details" open>
-                <summary>Camera, scene & lighting</summary>
-                <RenderSetup shot={shot} onChange={change} onCustom={custom} />
-              </details>
+              {!shot.site && (
+                <details className="shot-settings-details" open>
+                  <summary>Camera, scene & lighting</summary>
+                  <RenderSetup shot={shot} onChange={change} onCustom={custom} />
+                </details>
+              )}
             </>
           ) : step === 'build' ? (
             metadata

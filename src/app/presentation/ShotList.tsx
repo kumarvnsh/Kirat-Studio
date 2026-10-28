@@ -58,7 +58,7 @@ export function ShotList({
                         : a.quality === 'final'
                           ? 'Final ready'
                           : 'Preview'}{' '}
-                  · {s.scene.kind}
+                  · {s.site ? 'on site' : s.scene.kind}
                 </small>
               </span>
             </button>

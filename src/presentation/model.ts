@@ -1,5 +1,5 @@
 import { originalOption, type ProposalOption } from './options.ts';
-import { constructionNames } from '../domain/project.ts';
+import { constructionNames, numericSettings } from '../domain/project.ts';
 export type CameraPreset =
   | 'front'
   | 'left'
@@ -20,8 +20,16 @@ export type PresentationScene = {
   wallFinish: 'plaster' | 'concrete' | 'brick';
   groundFinish: 'paving' | 'concrete';
 };
+// A site mockup: the sign composited onto a photo of the wall it will hang on.
+export type SitePlacement = {
+  photo: string; // JPEG data URL
+  corners: [number, number][]; // wall TL, TR, BR, BL as fractions of the photo
+  wall: [number, number]; // real wall size in mm
+  board: [number, number]; // board size for this place in mm
+};
 export type Shot = {
   id: string;
+  site?: SitePlacement;
   name: string;
   optionId: string;
   scene: PresentationScene;
@@ -229,6 +237,22 @@ export function validatePresentation(raw: unknown): {
         (s.pairId !== undefined && !text(s.pairId, 100))
       )
         throw Error();
+      if (s.site !== undefined) {
+        const { photo, corners, wall, board } = s.site;
+        if (
+          !/^data:image\/jpeg;base64,[A-Za-z0-9+/]+={0,2}$/.test(photo) ||
+          (photo.length * 3) / 4 > 4 * 1048576 ||
+          !Array.isArray(corners) ||
+          corners.length !== 4 ||
+          !corners.every((c) => Array.isArray(c) && c.length === 2 && c.every((v) => finiteRange(v, -1, 2))) ||
+          !Array.isArray(wall) ||
+          !wall.every((v) => finiteRange(v, 100, 50000)) ||
+          !Array.isArray(board) ||
+          !finiteRange(board[0], numericSettings.width.min, numericSettings.width.max) ||
+          !finiteRange(board[1], numericSettings.height.min, numericSettings.height.max)
+        )
+          throw Error();
+      }
       if (s.camera.preset === 'custom') {
         const { position: p, target: t } = s.camera;
         if (

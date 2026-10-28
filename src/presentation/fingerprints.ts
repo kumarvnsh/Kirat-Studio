@@ -31,6 +31,11 @@ export async function shotFingerprint(
   const d = applyOption(design, option),
     s = structuredClone(shot);
   if (s.camera.preset === 'exploded') s.scene.kind = 'studio';
+  // Same overrides as createPresentationSnapshot, so a rendered mockup's key matches its live key.
+  if (s.site) {
+    [d.settings.width, d.settings.height] = s.site.board;
+    s.scene.kind = 'studio';
+  }
   if (d.artwork) {
     d.artwork.approved = false;
     for (const g of d.artwork.groups) g.name = '';

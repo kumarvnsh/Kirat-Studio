@@ -10,6 +10,7 @@ import { canvasBlob } from './pageCanvas.ts';
 import { loadImage } from '../artwork/import.ts';
 import { explodedLabels, labelledExplodedCanvas } from './explodedLabels.ts';
 import type { PresentationSnapshot } from './snapshot.ts';
+import { boardCorners, composite, type Pt } from './site.ts';
 export class FinalRenderer {
   private scene: SignScene | null = null;
   private host: HTMLDivElement | null = null;
@@ -136,11 +137,17 @@ export class FinalRenderer {
         shot.scene.kind === 'studio'
           ? new T.Box3().setFromObject(v.group)
           : v.scenery!.frameBounds.clone();
-      const camera = presentationCamera(bounds, shot.camera, shot.aspect);
-      const { width, height } = renderDimensions(
-        quality === 'final' ? shot.width : 1000,
-        shot.aspect,
-      );
+      const site = shot.site && (await sitePlan(shot, quality, bounds));
+      signal.throwIfAborted();
+      if (site) {
+        // Only the sign renders, front-on and exactly board-sized, over a transparent background.
+        v.scenery!.group.visible = false;
+        v.scene.background = null;
+        v.renderer.setClearColor(0x000000, 0);
+      }
+      const camera = site?.camera ?? presentationCamera(bounds, shot.camera, shot.aspect);
+      const { width, height } =
+        site?.render ?? renderDimensions(quality === 'final' ? shot.width : 1000, shot.aspect);
       const renderer = v.renderer;
       if (Math.max(width, height) > renderer.capabilities.maxTextureSize)
         throw Error('This device cannot render that size. Choose 2400 px or a wider frame.');
@@ -181,8 +188,9 @@ export class FinalRenderer {
       }
       signal.throwIfAborted();
       onProgress({ fraction: 1, label: 'Encoding image…' });
-      const output =
-        shot.camera.preset === 'exploded'
+      const output = site
+        ? site.paint(renderer.domElement, isNight)
+        : shot.camera.preset === 'exploded'
           ? await labelledExplodedCanvas(
               renderer.domElement,
               explodedLabels(
@@ -194,7 +202,7 @@ export class FinalRenderer {
           : renderer.domElement;
       const blob = await canvasBlob(output);
       signal.throwIfAborted();
-      return { blob, width, height };
+      return { blob, width: output.width, height: output.height };
     } catch (error) {
       if (error instanceof Error && error.name !== 'AbortError') this.dispose();
       throw error;
@@ -205,4 +213,53 @@ export class FinalRenderer {
       this.active = false;
     }
   }
+}
+
+// Site mockup: the output is the photo; the board render is sized to how large it appears there.
+async function sitePlan(shot: PresentationSnapshot['shot'], quality: 'preview' | 'final', bounds: T.Box3) {
+  const { photo, corners, wall, board } = shot.site!;
+  const image = await loadImage(photo),
+    long = quality === 'final' ? shot.width : 1000,
+    aspect = image.naturalWidth / image.naturalHeight,
+    out = aspect >= 1 ? [long, Math.round(long / aspect)] : [Math.round(long * aspect), long];
+  const quad = boardCorners(
+    corners.map(([x, y]): Pt => [x * out[0], y * out[1]]),
+    wall,
+    board,
+  );
+  const across = Math.max(Math.hypot(quad[1][0] - quad[0][0], quad[1][1] - quad[0][1]), Math.hypot(quad[2][0] - quad[3][0], quad[2][1] - quad[3][1]));
+  // Twice the on-photo size, so the composite samples down; capped for the GPU.
+  let rw = Math.min(4096, Math.max(64, Math.round(across * 2))),
+    rh = Math.round((rw * board[1]) / board[0]);
+  if (rh > 4096) [rw, rh] = [Math.round((rw * 4096) / rh), 4096];
+  const [W, H] = [board[0] / 1000, board[1] / 1000],
+    depth = Math.max(0.1, bounds.max.z - bounds.min.z);
+  const camera = new T.OrthographicCamera(-W / 2, W / 2, H / 2, -H / 2, 0.01, depth + 2);
+  camera.position.set(0, 0, bounds.max.z + 1);
+  camera.lookAt(0, 0, bounds.max.z);
+  camera.updateProjectionMatrix();
+  camera.updateMatrixWorld(true);
+  return {
+    camera,
+    render: { width: rw, height: Math.max(8, rh) },
+    paint(rendered: HTMLCanvasElement, night: boolean) {
+      const canvas = document.createElement('canvas');
+      [canvas.width, canvas.height] = out;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
+      ctx.drawImage(image, 0, 0, out[0], out[1]);
+      if (night) {
+        // ponytail: a flat dusk wash over a daytime photo; real night photos look better.
+        ctx.fillStyle = 'rgba(8, 16, 34, 0.68)';
+        ctx.fillRect(0, 0, out[0], out[1]);
+      }
+      const sign = document.createElement('canvas');
+      [sign.width, sign.height] = [rendered.width, rendered.height];
+      const sctx = sign.getContext('2d', { willReadFrequently: true })!;
+      sctx.drawImage(rendered, 0, 0);
+      const dst = ctx.getImageData(0, 0, out[0], out[1]);
+      composite(dst, sctx.getImageData(0, 0, sign.width, sign.height), quad);
+      ctx.putImageData(dst, 0, 0);
+      return canvas;
+    },
+  };
 }

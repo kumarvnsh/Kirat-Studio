@@ -79,9 +79,9 @@ export function ArtworkPanel({ onReview }: { onReview?: () => void } = {}) {
         <AiBoardPicker
           {...aiBoards}
           onClose={() => setAiBoards(null)}
-          onPick={(b, exclude) => {
+          onPick={(b, exclude, useBackground) => {
             setAiBoards(null);
-            importAiBoard(b, exclude);
+            importAiBoard(b, exclude, useBackground);
           }}
         />
       )}
@@ -107,8 +107,9 @@ export function ArtworkPanel({ onReview }: { onReview?: () => void } = {}) {
               const up = await readUpload(file);
               if ('ai' in up) {
                 const r = await readAi(up.ai);
-                // One artboard and nothing to leave out: import straight away.
-                if (r.boards.length === 1 && !suggestedExclude(r.boards[0]).length) importAiBoard(r.boards[0]);
+                // One artboard, nothing to leave out and no board colour to confirm: import straight away.
+                if (r.boards.length === 1 && !suggestedExclude(r.boards[0]).length && !r.boards[0].background)
+                  importAiBoard(r.boards[0]);
                 else setAiBoards(r);
               } else if ('svg' in up) importSvg(up.svg);
               else {
@@ -259,11 +260,12 @@ function AiBoardPicker({
 }: {
   boards: AiArtboard[];
   preferred: number;
-  onPick: (b: AiArtboard, exclude: number[]) => void;
+  onPick: (b: AiArtboard, exclude: number[], useBackground: boolean) => void;
   onClose: () => void;
 }) {
   const [chosen, setChosen] = useState(preferred);
   const [exclude, setExclude] = useState(() => suggestedExclude(boards[preferred]));
+  const [useBackground, setUseBackground] = useState(true);
   const mm = (v: number) => Math.round(v).toLocaleString();
   const board = boards[chosen],
     kept = boardArt(board, exclude),
@@ -362,13 +364,20 @@ function AiBoardPicker({
           </button>
         )}
       </div>
+      {board.background && (
+        <label className="ai-colours">
+          <input type="checkbox" checked={useBackground} onChange={(e) => setUseBackground(e.target.checked)} />
+          <span className="ai-swatch" style={{ background: board.background }} />
+          Use {board.background} from the file as the ACP board colour
+        </label>
+      )}
       <small className="muted">
         Board {mm(board.widthMm)} × {mm(board.heightMm)} mm · artwork {mm(kept.artWidthMm)} × {mm(kept.artHeightMm)} mm ·{' '}
         {kept.shapes} of {board.paths.length} shapes
       </small>
       <div className="modal-foot">
         <button onClick={onClose}>Cancel</button>
-        <button className="accent" disabled={!kept.shapes} onClick={() => onPick(board, exclude)}>
+        <button className="accent" disabled={!kept.shapes} onClick={() => onPick(board, exclude, useBackground)}>
           Import artboard {board.index + 1}
         </button>
       </div>

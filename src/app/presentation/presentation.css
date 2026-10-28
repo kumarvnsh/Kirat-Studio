@@ -537,3 +537,25 @@
 .export-page-choice span {
   overflow-wrap: anywhere;
 }
+.site-upload { display: flex; flex-direction: column; gap: 2px; padding: 12px; border: 1px dashed #b9c7cd; border-radius: 8px; cursor: pointer; font-weight: 600; }
+.site-upload small { font-weight: 400; color: var(--muted, #60727a); }
+.site-stage { position: relative; display: inline-block; max-width: 100%; line-height: 0; }
+.site-stage img { display: block; max-width: 100%; max-height: 65vh; width: auto; height: auto; }
+.site-stage svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; touch-action: none; }
+.site-wall { fill: none; stroke: #e5484d; stroke-width: 2px; vector-effect: non-scaling-stroke; }
+.site-board { fill: none; stroke: #fff; stroke-width: 1.5px; stroke-dasharray: 6 4; vector-effect: non-scaling-stroke; }
+.site-handle { position: absolute; width: 18px; height: 18px; margin: -9px 0 0 -9px; padding: 0; border-radius: 50%; border: 2px solid #fff; background: #e5484d; box-shadow: 0 1px 4px #0006; cursor: grab; touch-action: none; }
+.site-handle:focus-visible { outline: 3px solid #233c46; outline-offset: 2px; }
+.site-size { border: 0; padding: 0; margin: 10px 0 4px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.site-size legend { font-size: 12px; font-weight: 600; margin-bottom: 4px; }
+.site-size small { color: var(--muted, #60727a); font-size: 11px; }
+.site-upload-button { display: inline-flex; align-items: center; font-size: 12px; min-height: 36px; padding: 8px 11px; border-radius: 4px; border: 1px dashed #8fa3ab; background: #fff; cursor: pointer; font-weight: 600; }
+.site-upload-button:hover, .site-upload:hover { border-color: #233c46; }
+.site-slides { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; margin-top: 12px; }
+.site-slide { display: flex; flex-direction: column; gap: 6px; padding: 10px; border: 1px solid #d6e1e7; border-radius: 8px; cursor: pointer; opacity: 0.55; }
+.site-slide.active { opacity: 1; border-color: #233c46; box-shadow: 0 0 0 1px #233c46; }
+.site-slide-photo { position: relative; display: block; width: fit-content; margin: 0 auto; line-height: 0; }
+.site-slide-photo img { display: block; max-width: 100%; max-height: 150px; width: auto; height: auto; border-radius: 4px; }
+.site-slide-box { position: absolute; border: 2px solid #e5484d; }
+.site-slide-text { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; }
+.site-slide small { color: #60727a; font-size: 12px; }
