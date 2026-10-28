@@ -248,7 +248,7 @@ export class SignScene {
     // Exposure first, in its own pass: bloom samples the pass input, not earlier effects in the same pass.
     this.composer.addPass(new EffectPass(this.camera, this.exposure));
     this.composer.addPass(
-      new EffectPass(this.camera, this.bloom, new ToneMappingEffect({ mode: ToneMappingMode.AGX })),
+      new EffectPass(this.camera, this.bloom, new ToneMappingEffect({ mode: ToneMappingMode.NEUTRAL })),
     );
     this.scene.add(this.group);
     const ray = new T.Raycaster();
