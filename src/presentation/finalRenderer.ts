@@ -153,7 +153,9 @@ export class FinalRenderer {
         throw Error('This device cannot render that size. Choose 2400 px or a wider frame.');
       renderer.setPixelRatio(1);
       renderer.setSize(width, height, false);
-      renderer.toneMapping = T.AgXToneMapping;
+      // Khronos PBR Neutral keeps material colours true (AgX lifted dark colours and washed them
+      // out, which made signs look faded beside a real photo).
+      renderer.toneMapping = T.NeutralToneMapping;
       renderer.toneMappingExposure =
         ((isNight ? 1.3 : isDusk ? 1 : 0.75) * 2 ** shot.exposureEV) / daylightScale;
       signal.throwIfAborted();
