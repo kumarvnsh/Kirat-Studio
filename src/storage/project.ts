@@ -198,6 +198,7 @@ function validateArtwork(a: Artwork) {
       !optColour(g.trimColor) ||
       !optColour(g.backColor) ||
       (g.dayNight !== undefined && typeof g.dayNight !== 'boolean') ||
+      (g.backLit !== undefined && typeof g.backLit !== 'boolean') ||
       (g.light !== undefined && (typeof g.light !== 'object' || checkLight(g.light) !== null))
     )
       throw Error(

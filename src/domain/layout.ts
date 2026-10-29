@@ -43,7 +43,8 @@ export type ElementLayout = {
   returnColor?: string; // painted returns; unset = natural metal
   dayNight?: boolean; // day/night face film: faceColor by day, LED white when lit
   trimColor?: string; // trim cap colour; unset = black
-  backColor?: string; // painted back; unset = bare aluminium
+  backColor?: string; // painted back (or the tint of a lit back); unset = bare aluminium
+  backLit?: boolean; // rooftop: translucent back that glows from behind
   light?: ResolvedLight; // lit constructions only
   regions: Region[];
   bounds: [number, number, number, number]; // x0, y0, x1, y1 (mm)
@@ -558,6 +559,8 @@ export function computeLayout(design: DesignState): Layout {
         params = { ...resolveParams(e.type, group) },
         light = resolveLight(group, e, s.ledTemp),
         dayNight = !!group?.dayNight && frontLit(e.type),
+        // A lit back only makes sense where the back is seen: rooftop letters with LEDs inside.
+        backLit = !!group?.backLit && rooftop && !!recipe.lit && !haloLit(e.type) && !panelIntegrated(e.type),
         map = elMapper.get(e.id) ?? baseMap,
         regions = e.regions.map((r) => ({
           outer: r.outer.map(map),
@@ -614,11 +617,20 @@ export function computeLayout(design: DesignState): Layout {
           z1: rear - params.ledSetback + LED_SIZE.d,
         });
       } else if (recipe.lit) {
-        add('back', 'backs', params.back, `${m.back} ${params.back} mm${group?.backColor && !haloLit(e.type) ? `, painted ${group.backColor}` : ''}`);
+        add(
+          'back',
+          'backs',
+          params.back,
+          backLit
+            ? `Opal acrylic back ${params.back} mm, lit${group?.backColor ? ` + ${group.backColor} translucent vinyl` : ''}`
+            : `${m.back} ${params.back} mm${group?.backColor && !haloLit(e.type) ? `, painted ${group.backColor}` : ''}`,
+        );
         parts.push({
           kind: 'leds',
           layer: 'leds',
-          material: isRGB(light.mode) ? m.leds!.replace('LED module', 'RGB LED module') : m.leds!,
+          material:
+            (isRGB(light.mode) ? m.leds!.replace('LED module', 'RGB LED module') : m.leds!) +
+            (backLit ? ' · double-sided for the lit back' : ''),
           z0: z,
           z1: z + LED_SIZE.d,
         });
@@ -659,6 +671,7 @@ export function computeLayout(design: DesignState): Layout {
         ...(dayNight ? { dayNight } : {}),
         ...(group?.trimColor ? { trimColor: group.trimColor } : {}),
         ...(group?.backColor && !haloLit(e.type) ? { backColor: group.backColor } : {}),
+        ...(backLit ? { backLit } : {}),
         light: recipe.lit ? light : undefined,
         returnColor: e.returnColor === null ? undefined : (e.returnColor ?? group?.returnColor),
         regions,

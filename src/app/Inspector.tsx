@@ -542,16 +542,35 @@ function GroupProps({ a, g }: { a: Artwork; g: ArtworkGroup }) {
               )
             }
           />)}
+          {!panelIntegrated(g.type) && !haloLit(g.type) && isRooftop(design.settings) && (
+            <label className="check" title="Translucent opal back with double-sided LEDs, seen from behind the roof sign">
+              <input
+                type="checkbox"
+                checked={!!g.backLit}
+                onChange={(e) =>
+                  editArtwork(
+                    (x) => setGroup(x, g.id, { backLit: e.target.checked }),
+                    e.target.checked
+                      ? `${g.name}: lit back. Light shows through the back at night.`
+                      : `${g.name}: solid back.`,
+                  )
+                }
+              />
+              Lit back · light shows through the back at night
+            </label>
+          )}
           {!panelIntegrated(g.type) && !haloLit(g.type) && (<ColorField
-            label="Letter back colour"
+            label={g.backLit && isRooftop(design.settings) ? 'Back colour (translucent)' : 'Letter back colour'}
             value={g.backColor}
-            fallback="Bare aluminium"
-            previewColor={g.backColor ?? '#75878c'}
+            fallback={g.backLit && isRooftop(design.settings) ? 'White opal' : 'Bare aluminium'}
+            previewColor={g.backColor ?? (g.backLit && isRooftop(design.settings) ? '#ffffff' : '#75878c')}
             palette={artworkPalette(a)}
             onCommit={(c, live) =>
               editArtwork(
                 (x) => setGroup(x, g.id, { backColor: c }),
-                c
+                g.backLit && isRooftop(design.settings)
+                  ? c ? `${g.name} back glows ${c}.` : `${g.name} back glows white.`
+                  : c
                   ? `${g.name} backs painted ${c}${isRooftop(design.settings) ? ': seen from behind the rooftop sign' : ''}.`
                   : `${g.name} backs bare aluminium.`,
                 live ? `gback-${g.id}` : undefined,

@@ -84,6 +84,7 @@ export type GroupPatch = {
   params?: Record<string, number>;
   light?: GroupLight | null; // merged into the group's light; null resets to board defaults
   dayNight?: boolean;
+  backLit?: boolean;
   charHeight?: number | null;
   charWidth?: number | null;
   charDepth?: number | null;
@@ -119,6 +120,8 @@ export function setGroup(a: Artwork, id: string, patch: GroupPatch): Artwork {
   if (patch.params) g.params = { ...g.params, ...patch.params };
   if (patch.dayNight === false) delete g.dayNight;
   else if (patch.dayNight) g.dayNight = true;
+  if (patch.backLit === false) delete g.backLit;
+  else if (patch.backLit) g.backLit = true;
   if (patch.light === null) delete g.light;
   else if (patch.light) {
     const light = { ...g.light, ...patch.light },
