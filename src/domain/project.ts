@@ -69,6 +69,8 @@ export type ArtworkGroup = {
   // On full acrylic letters returnColor is the translucent side colour (vinyl over the sides).
   trimColor?: string; // trim cap colour; unset = black
   backColor?: string; // painted letter back, seen from behind on rooftop signs; unset = bare aluminium
+  // Rooftop only: a translucent opal back that glows from behind at night (backColor tints it).
+  backLit?: boolean;
   // Day/night face film (front-lit only): the face shows faceColor (default near-black) in
   // daylight and transmits the LED white when lit after dark.
   dayNight?: boolean;

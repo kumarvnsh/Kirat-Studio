@@ -98,3 +98,36 @@ test('test_artworkops_trim_and_back_colours_set_and_clear', () => {
   assert.ok(!('trimColor' in cleared.groups[0]) && !('backColor' in cleared.groups[0]));
   assert.throws(() => setGroup(a, 'g1', { backColor: 'red' }), /#rrggbb/);
 });
+
+test('test_layout_rooftop_lit_back_glows_with_opal_back_and_double_sided_leds', () => {
+  // Arrange
+  const d = design('front', { backLit: true, backColor: '#ffd166' });
+  d.settings.mounting = { kind: 'rooftop', structure: 'beam', clearance: 300, spacing: 1200 };
+  // Act
+  const [e] = computeLayout(d).elements;
+  // Assert
+  assert.equal(e.backLit, true);
+  assert.match(part(d, 'back').material, /Opal acrylic back .*lit \+ #ffd166 translucent vinyl/);
+  assert.match(part(d, 'leds').material, /double-sided/);
+});
+
+test('test_layout_lit_back_ignored_on_fascia_board', () => {
+  // Arrange
+  const d = design('front', { backLit: true });
+  // Act
+  const [e] = computeLayout(d).elements;
+  // Assert
+  assert.equal(e.backLit, undefined, 'a back against the fascia is never seen');
+  assert.doesNotMatch(part(d, 'back').material, /Opal/);
+});
+
+test('test_artworkops_lit_back_toggle_sets_and_clears', () => {
+  // Arrange
+  const a = design('front', {}).artwork!;
+  // Act
+  const on = setGroup(a, 'g1', { backLit: true }),
+    off = setGroup(on, 'g1', { backLit: false });
+  // Assert
+  assert.equal(on.groups[0].backLit, true);
+  assert.ok(!('backLit' in off.groups[0]));
+});

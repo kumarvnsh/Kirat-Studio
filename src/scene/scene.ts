@@ -696,7 +696,17 @@ export class SignScene {
     if (p.kind === 'stud') pins(0.0025, this.material('#8d969a', 0.9, 0.35), false);
     else if (p.kind === 'standoff') pins(0.006, this.material('#b9c2c4', 0.9, 0.3), true);
     else if (p.kind === 'back' && panelIntegrated(e.type)) extrude(this.finish('acrylic', '#f4f7f7'), false);
-    else if (p.kind === 'back') {
+    else if (p.kind === 'back' && e.backLit) {
+      // Rooftop lit back: opal acrylic (tinted by the back colour) glowing toward the rear.
+      const tint = e.backColor ?? '#ffffff',
+        m = this.finish('acrylic', tint) as T.MeshPhysicalMaterial;
+      m.emissive.set(ledColour).multiply(new T.Color(tint));
+      m.emissiveIntensity = glow * 0.8;
+      this.lightUpdaters.push((cur) => {
+        m.emissiveIntensity = glowOf(cur) * 0.8;
+      });
+      extrude(m, false);
+    } else if (p.kind === 'back') {
       const mat = haloLit(e.type)
         ? new T.MeshStandardMaterial({ color: '#dfe8ea', roughness: 0.1, transparent: true, opacity: 0.45 })
         : e.backColor
