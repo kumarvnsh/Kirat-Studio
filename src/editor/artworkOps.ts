@@ -79,6 +79,8 @@ export type GroupPatch = {
   type?: ConstructionType;
   faceColor?: string | null; // null clears
   returnColor?: string | null;
+  trimColor?: string | null;
+  backColor?: string | null;
   params?: Record<string, number>;
   light?: GroupLight | null; // merged into the group's light; null resets to board defaults
   dayNight?: boolean;
@@ -124,7 +126,7 @@ export function setGroup(a: Artwork, id: string, patch: GroupPatch): Artwork {
     if (bad) throw Error(bad);
     g.light = light;
   }
-  for (const k of ['faceColor', 'returnColor'] as const)
+  for (const k of ['faceColor', 'returnColor', 'trimColor', 'backColor'] as const)
     if (patch[k] === null) delete g[k];
     else if (patch[k] !== undefined) {
       if (!HEX.test(patch[k]!)) throw Error('Colours are #rrggbb.');

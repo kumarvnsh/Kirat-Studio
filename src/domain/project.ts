@@ -66,6 +66,9 @@ export type ArtworkGroup = {
   params?: Record<string, number>;
   faceColor?: string; // face / flat colour for the group; unset = artwork colours or board default
   returnColor?: string; // painted return colour (lit letters); unset = natural metal
+  // On full acrylic letters returnColor is the translucent side colour (vinyl over the sides).
+  trimColor?: string; // trim cap colour; unset = black
+  backColor?: string; // painted letter back, seen from behind on rooftop signs; unset = bare aluminium
   // Day/night face film (front-lit only): the face shows faceColor (default near-black) in
   // daylight and transmits the LED white when lit after dark.
   dayNight?: boolean;

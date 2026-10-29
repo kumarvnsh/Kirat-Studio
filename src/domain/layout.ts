@@ -4,7 +4,7 @@
 import { mountedScenePreset } from './scenePresets.ts';
 import { inside, perimeter } from '../artwork/contours.js';
 import { expandRegions } from './panelOpenings.ts';
-import { recipes, frontLit, panelIntegrated, resolveParams, VINYL_THICKNESS } from './recipes.ts';
+import { recipes, frontLit, haloLit, panelIntegrated, resolveParams, VINYL_THICKNESS } from './recipes.ts';
 import { assemblySteps, visibleLayers } from './assembly.ts';
 import { isRGB, resolveLight, type ResolvedLight } from './lighting.ts';
 import { rooftopStructure, type StructureMember } from './rooftop.ts';
@@ -42,6 +42,8 @@ export type ElementLayout = {
   faceColor?: string; // resolved: letter override, else group colour; unset = artwork colours
   returnColor?: string; // painted returns; unset = natural metal
   dayNight?: boolean; // day/night face film: faceColor by day, LED white when lit
+  trimColor?: string; // trim cap colour; unset = black
+  backColor?: string; // painted back; unset = bare aluminium
   light?: ResolvedLight; // lit constructions only
   regions: Region[];
   bounds: [number, number, number, number]; // x0, y0, x1, y1 (mm)
@@ -612,7 +614,7 @@ export function computeLayout(design: DesignState): Layout {
           z1: rear - params.ledSetback + LED_SIZE.d,
         });
       } else if (recipe.lit) {
-        add('back', 'backs', params.back, `${m.back} ${params.back} mm`);
+        add('back', 'backs', params.back, `${m.back} ${params.back} mm${group?.backColor && !haloLit(e.type) ? `, painted ${group.backColor}` : ''}`);
         parts.push({
           kind: 'leds',
           layer: 'leds',
@@ -620,14 +622,20 @@ export function computeLayout(design: DesignState): Layout {
           z0: z,
           z1: z + LED_SIZE.d,
         });
-        add('returns', 'returns', params.depth, `${m.returns} ${params.gauge} mm`);
+        const sides = e.returnColor === null ? undefined : (e.returnColor ?? group?.returnColor);
+        add(
+          'returns',
+          'returns',
+          params.depth,
+          `${m.returns} ${params.gauge} mm${sides ? (e.type === 'fullacrylic' ? ` + ${sides} translucent vinyl` : `, painted ${sides}`) : ''}`,
+        );
         add('face', 'faces', params.face, `${m.face} ${params.face} mm${dayNight ? ' + day/night film' : ''}`);
         // Trim cap wraps the face edge and the top of the return; it doesn't add to the stack below it.
         if (params.trimcap > 0)
           parts.push({
             kind: 'trim',
             layer: 'faces',
-            material: `${m.trim} ${params.trimcap} mm lip`,
+            material: `${m.trim} ${params.trimcap} mm lip${group?.trimColor ? `, ${group.trimColor}` : ''}`,
             z0: z - params.face - 5,
             z1: z + TRIM_TOP,
           });
@@ -649,6 +657,8 @@ export function computeLayout(design: DesignState): Layout {
         params,
         faceColor: e.faceColor ?? group?.faceColor ?? (dayNight ? DAY_NIGHT_COLOUR : undefined),
         ...(dayNight ? { dayNight } : {}),
+        ...(group?.trimColor ? { trimColor: group.trimColor } : {}),
+        ...(group?.backColor && !haloLit(e.type) ? { backColor: group.backColor } : {}),
         light: recipe.lit ? light : undefined,
         returnColor: e.returnColor === null ? undefined : (e.returnColor ?? group?.returnColor),
         regions,

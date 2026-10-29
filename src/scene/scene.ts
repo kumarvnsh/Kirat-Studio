@@ -699,7 +699,9 @@ export class SignScene {
     else if (p.kind === 'back') {
       const mat = haloLit(e.type)
         ? new T.MeshStandardMaterial({ color: '#dfe8ea', roughness: 0.1, transparent: true, opacity: 0.45 })
-        : this.material('#75878c', 0.05, 0.8);
+        : e.backColor
+          ? this.finish('painted', e.backColor)
+          : this.material('#75878c', 0.05, 0.8);
       extrude(mat, false);
       if (haloLit(e.type))
         this.haloGlow(regions, L.letterBase * M + 0.0015, e.id, mesh, light?.color ?? ledColour, glow, glowOf);
@@ -727,9 +729,13 @@ export class SignScene {
       }
     } else if (p.kind === 'returns') {
       // Full acrylic letters glow through their sides; metal returns stay dark.
+      // A side colour (translucent vinyl over the acrylic sides) tints them by day and their glow at night.
       if (e.type === 'fullacrylic') {
-        const m = this.finish('acrylic', base) as T.MeshPhysicalMaterial;
-        m.emissive.set(ledColour).multiply(new T.Color(matchArt ? light!.color : dayNight ? '#ffffff' : base));
+        const side = e.returnColor ?? base,
+          m = this.finish('acrylic', side) as T.MeshPhysicalMaterial;
+        m.emissive
+          .set(ledColour)
+          .multiply(new T.Color(matchArt ? light!.color : e.returnColor ? side : dayNight ? '#ffffff' : base));
         m.emissiveIntensity = glow * 0.6; // sides pass less light than the face
         this.lightUpdaters.push((cur) => {
           m.emissiveIntensity = glowOf(cur) * 0.6;
@@ -740,7 +746,11 @@ export class SignScene {
           e.params.gauge * M,
           e.returnColor ? this.finish('painted', e.returnColor) : this.finish('aluminium'),
         );
-    } else if (p.kind === 'trim') ring((2 * e.params.trimcap + e.params.gauge) * M, this.finish('trim'));
+    } else if (p.kind === 'trim') {
+      const trim = this.finish('trim') as T.MeshPhysicalMaterial;
+      if (e.trimColor) trim.color.set(e.trimColor);
+      ring((2 * e.params.trimcap + e.params.gauge) * M, trim);
+    }
     else if (p.kind === 'face') extrude(e.type === 'halo' ? metalFace() : faceMat(), e.type !== 'halo');
     else if (e.type === 'metal') extrude(metalFace(), false);
     else if (e.type === 'vinyl') {
