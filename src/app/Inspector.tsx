@@ -9,7 +9,7 @@ import { resizeArtwork } from '../editor/resizeArtwork.ts';
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { computeLayout, type ElementLayout } from '../domain/layout.ts';
 import { kelvinToHex, LED_TEMPS } from '../domain/lighting.ts';
-import { checkParams, frontLit, recipes, resolveParams, panelIntegrated } from '../domain/recipes.ts';
+import { checkParams, frontLit, haloLit, recipes, resolveParams, panelIntegrated } from '../domain/recipes.ts';
 import {
   checkSettings,
   DAY_NIGHT_COLOUR,
@@ -512,17 +512,49 @@ function GroupProps({ a, g }: { a: Artwork; g: ArtworkGroup }) {
       {recipe.lit && (
         <>
           {!panelIntegrated(g.type) && (<ColorField
-            label="Return wall colour"
+            label={g.type === 'fullacrylic' ? 'Side colour (translucent vinyl)' : 'Return (side) colour'}
             value={g.returnColor}
-            fallback="Natural metal"
-            previewColor={g.returnColor ?? '#c5ccd0'}
-            autoColors={['metal']}
+            fallback={g.type === 'fullacrylic' ? 'Same as face' : 'Natural metal'}
+            previewColor={g.returnColor ?? (g.type === 'fullacrylic' ? firstArtHex : '#c5ccd0')}
+            autoColors={g.type === 'fullacrylic' ? grpCols : ['metal']}
             palette={artworkPalette(a)}
             onCommit={(c, live) =>
               editArtwork(
                 (x) => setGroup(x, g.id, { returnColor: c }),
-                c ? `${g.name} returns painted ${c}.` : `${g.name} returns natural metal.`,
+                g.type === 'fullacrylic'
+                  ? c ? `${g.name} sides ${c}: they show it by day and glow it at night.` : `${g.name} sides match the face.`
+                  : c ? `${g.name} returns painted ${c}.` : `${g.name} returns natural metal.`,
                 live ? `gret-${g.id}` : undefined,
+              )
+            }
+          />)}
+          {(resolveParams(g.type, g).trimcap ?? 0) > 0 && (<ColorField
+            label="Trim cap colour"
+            value={g.trimColor}
+            fallback="Black"
+            previewColor={g.trimColor ?? '#2f3336'}
+            palette={artworkPalette(a)}
+            onCommit={(c, live) =>
+              editArtwork(
+                (x) => setGroup(x, g.id, { trimColor: c }),
+                c ? `${g.name} trim cap ${c}.` : `${g.name} trim cap black.`,
+                live ? `gtrim-${g.id}` : undefined,
+              )
+            }
+          />)}
+          {!panelIntegrated(g.type) && !haloLit(g.type) && (<ColorField
+            label="Letter back colour"
+            value={g.backColor}
+            fallback="Bare aluminium"
+            previewColor={g.backColor ?? '#75878c'}
+            palette={artworkPalette(a)}
+            onCommit={(c, live) =>
+              editArtwork(
+                (x) => setGroup(x, g.id, { backColor: c }),
+                c
+                  ? `${g.name} backs painted ${c}${isRooftop(design.settings) ? ': seen from behind the rooftop sign' : ''}.`
+                  : `${g.name} backs bare aluminium.`,
+                live ? `gback-${g.id}` : undefined,
               )
             }
           />)}
